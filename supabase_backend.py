@@ -136,6 +136,18 @@ class SupabaseBackend:
             timeout_seconds=3,
         )
 
+    def load_admin_metrics(self, access_token: str) -> dict[str, Any]:
+        response = self._data_request(
+            "POST",
+            "/rest/v1/rpc/admin_analytics_dashboard",
+            access_token,
+            payload={},
+        )
+        data = response.json()
+        if not isinstance(data, dict):
+            raise SupabaseError("운영 지표 응답 형식이 올바르지 않습니다.")
+        return data
+
     def _data_request(
         self,
         method: str,

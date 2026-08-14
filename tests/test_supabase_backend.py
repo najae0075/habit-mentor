@@ -135,6 +135,19 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Prefer"], "resolution=ignore-duplicates,return=minimal")
         self.assertEqual(kwargs["timeout"], 3)
 
+    @patch("supabase_backend.requests.request")
+    def test_loads_aggregated_admin_metrics_from_secure_rpc(self, request):
+        request.return_value = Mock(
+            ok=True,
+            json=lambda: {"registered_users": 12, "checkin_rate": 75.0},
+        )
+
+        metrics = self.backend.load_admin_metrics("admin-token")
+
+        self.assertEqual(metrics["registered_users"], 12)
+        self.assertIn("/rest/v1/rpc/admin_analytics_dashboard", request.call_args.args[1])
+        self.assertEqual(request.call_args.kwargs["headers"]["Authorization"], "Bearer admin-token")
+
     @patch("supabase_backend.requests.request", side_effect=requests.Timeout)
     def test_network_failure_has_user_friendly_message(self, _request):
         with self.assertRaisesRegex(SupabaseError, "기록 서버에 연결할 수 없습니다"):

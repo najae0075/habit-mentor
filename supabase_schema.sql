@@ -59,3 +59,125 @@ on public.analytics_events(event_name, created_at desc);
 create index if not exists idx_analytics_events_user_created_at
 on public.analytics_events(user_id, created_at desc);
 
+create table if not exists public.admin_users (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table public.admin_users enable row level security;
+
+create or replace function public.admin_analytics_dashboard()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  result jsonb;
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.admin_users where user_id = auth.uid()
+  ) then
+    raise exception 'administrator access required' using errcode = '42501';
+  end if;
+
+  with event_days as (
+    select
+      user_id,
+      event_name,
+      metadata,
+      (created_at at time zone 'Asia/Seoul')::date as day
+    from public.analytics_events
+  ),
+  today_counts as (
+    select
+      count(distinct user_id) filter (where event_name = 'daily_active') as active_users,
+      count(distinct user_id) filter (where event_name = 'checkin_started') as checkin_started_users,
+      count(distinct user_id) filter (where event_name = 'checkin_completed') as checkin_completed_users,
+      count(*) filter (where event_name = 'recommendation_accepted') as recommendations_accepted,
+      count(*) filter (
+        where event_name = 'recommendation_accepted'
+          and metadata->>'modified' = 'true'
+      ) as recommendations_modified,
+      count(*) filter (where event_name = 'habit_completed') as habits_completed,
+      count(*) filter (where event_name = 'reminder_shown') as reminders_shown,
+      count(*) filter (where event_name = 'reminder_acknowledged') as reminders_acknowledged,
+      count(distinct user_id) filter (
+        where event_name = 'user_returned'
+          and metadata->>'days_since_last_checkin' = '1'
+      ) as next_day_returns
+    from event_days
+    where day = (now() at time zone 'Asia/Seoul')::date
+  ),
+  retention as (
+    select
+      count(*) filter (
+        where (u.created_at at time zone 'Asia/Seoul')::date
+          <= (now() at time zone 'Asia/Seoul')::date - 7
+      ) as eligible_7,
+      count(*) filter (
+        where (u.created_at at time zone 'Asia/Seoul')::date
+          <= (now() at time zone 'Asia/Seoul')::date - 7
+          and exists (
+            select 1 from event_days e
+            where e.user_id = u.id and e.event_name = 'daily_active'
+              and e.day = (u.created_at at time zone 'Asia/Seoul')::date + 7
+          )
+      ) as retained_7,
+      count(*) filter (
+        where (u.created_at at time zone 'Asia/Seoul')::date
+          <= (now() at time zone 'Asia/Seoul')::date - 30
+      ) as eligible_30,
+      count(*) filter (
+        where (u.created_at at time zone 'Asia/Seoul')::date
+          <= (now() at time zone 'Asia/Seoul')::date - 30
+          and exists (
+            select 1 from event_days e
+            where e.user_id = u.id and e.event_name = 'daily_active'
+              and e.day = (u.created_at at time zone 'Asia/Seoul')::date + 30
+          )
+      ) as retained_30
+    from auth.users u
+  )
+  select jsonb_build_object(
+    'registered_users', (select count(*) from auth.users),
+    'active_users', t.active_users,
+    'checkin_started_users', t.checkin_started_users,
+    'checkin_completed_users', t.checkin_completed_users,
+    'checkin_rate', round(100.0 * t.checkin_completed_users / nullif(t.active_users, 0), 1),
+    'recommendations_accepted', t.recommendations_accepted,
+    'recommendations_modified', t.recommendations_modified,
+    'habits_completed', t.habits_completed,
+    'reminders_shown', t.reminders_shown,
+    'reminders_acknowledged', t.reminders_acknowledged,
+    'next_day_returns', t.next_day_returns,
+    'retention_7', round(100.0 * r.retained_7 / nullif(r.eligible_7, 0), 1),
+    'retention_30', round(100.0 * r.retained_30 / nullif(r.eligible_30, 0), 1),
+    'daily', (
+      select coalesce(jsonb_agg(row_data order by day), '[]'::jsonb)
+      from (
+        select
+          day,
+          jsonb_build_object(
+            'day', day,
+            'active_users', count(distinct user_id) filter (where event_name = 'daily_active'),
+            'checked_in_users', count(distinct user_id) filter (where event_name = 'checkin_completed')
+          ) as row_data
+        from event_days
+        where day >= (now() at time zone 'Asia/Seoul')::date - 13
+        group by day
+      ) recent
+    )
+  ) into result
+  from today_counts t cross join retention r;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.admin_analytics_dashboard() from public;
+grant execute on function public.admin_analytics_dashboard() to authenticated;
+
+-- 관리자 등록 예시(사용자 UUID로 교체 후 SQL Editor에서 한 번 실행):
+-- insert into public.admin_users(user_id) values ('YOUR_AUTH_USER_UUID') on conflict do nothing;
+

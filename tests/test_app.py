@@ -44,8 +44,11 @@ class DailyPaceTest(unittest.TestCase):
         app.run(timeout=15)
 
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.metric), 3)
+        self.assertEqual(len(app.metric), 6)
         self.assertEqual(app.metric[0].label, "주간 성공률")
+        self.assertEqual(app.metric[3].label, "월간 완료")
+        self.assertTrue(any("이전 달" in button.label for button in app.button))
+        self.assertTrue(any("다음 달" in button.label for button in app.button))
 
     def test_character_page_shows_growth(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)

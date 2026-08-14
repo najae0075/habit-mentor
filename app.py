@@ -20,7 +20,7 @@ st.set_page_config(
     page_title="데일리 페이스",
     page_icon="🌿",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 
@@ -670,7 +670,7 @@ def inject_styles() -> None:
         .stApp { background:var(--paper); color:var(--ink); font-family:'Noto Sans KR',sans-serif; }
         [data-testid="stSidebar"] { background:#f0eee7; border-right:1px solid var(--line); }
         [data-testid="stSidebar"] hr { border-color:var(--line); }
-        .block-container { max-width:1120px; padding-top:2rem; padding-bottom:5rem; }
+        .block-container { width:min(100%,1280px); max-width:1280px; padding:2rem 2rem 5rem; }
         h1,h2,h3 { color:var(--ink); font-family:'Noto Serif KR',serif!important; letter-spacing:-.035em; }
         .brand { font:600 1.35rem 'Noto Serif KR',serif; display:flex; align-items:center; gap:.65rem; margin:.2rem 0 2rem; }
         .brand-mark { display:inline-grid; place-items:center; width:31px; height:31px; border-radius:55% 45%; background:var(--dark); color:white; font-style:italic; }
@@ -716,20 +716,67 @@ def inject_styles() -> None:
         .calendar-day.completed { background:#e7efe8; border-color:#aac0ae; }
         .calendar-day.recovery { background:#f6e8df; border-color:#d8b6a8; }
         .calendar-day.checked { box-shadow:inset 0 -3px #91ad99; }
-        div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:2.8rem; }
+        div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:44px; white-space:normal; }
         div.stButton > button[kind="primary"] { background:var(--dark); border-color:var(--dark); }
         [data-testid="stMetricValue"] { color:var(--coral); }
-        @media(max-width:700px) {
-          .block-container { padding:1rem 1rem 5rem; }
-          .hero { min-height:420px; padding:2rem 1.5rem; }
-          .hero h1 { font-size:2rem; }
-          .character { right:-5%; transform:scale(.75); transform-origin:bottom right; }
-          .week-card { display:block; }
-          .center-heading { text-align:left; }
-          .center-heading h1 { font-size:1.9rem; }
-          .form-card,.recommend-card { padding:1.2rem; }
-          .calendar-grid { gap:3px; }
-          .calendar-day { min-height:58px; padding:.35rem; font-size:.6rem; }
+        [data-testid="stDataFrame"], [data-testid="stTable"] { max-width:100%; overflow-x:auto; }
+        [data-testid="stMetric"] { min-width:0; }
+        [data-testid="stMetricLabel"] { white-space:normal; }
+
+        @media (min-width:701px) and (max-width:1024px) {
+          .block-container { padding:1.5rem 1.5rem 5rem; }
+          [data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:1rem; }
+          [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            flex:1 1 calc(50% - .5rem)!important;
+            width:calc(50% - .5rem)!important;
+            min-width:280px!important;
+          }
+          .hero { min-height:340px; padding:2.6rem 3rem; }
+          .hero h1 { font-size:2.3rem; }
+          .character { right:3%; transform:scale(.9); transform-origin:bottom right; }
+          .habit-card { min-height:210px; }
+          .center-heading h1 { font-size:2.1rem; }
+          .week-card,.form-card,.recommend-card { padding:1.5rem; }
+        }
+
+        @media (max-width:700px) {
+          .block-container { width:100%; padding:1rem .85rem 4.5rem; }
+          [data-testid="stHorizontalBlock"] { flex-direction:column; gap:.65rem; }
+          [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            flex:1 1 100%!important;
+            width:100%!important;
+            min-width:0!important;
+          }
+          [data-testid="stSidebar"] { width:min(86vw,320px)!important; }
+          [data-testid="stMetric"] { padding:.8rem 1rem; border:1px solid var(--line); border-radius:14px; background:#fbfaf6; }
+          [data-testid="stMetricValue"] { font-size:1.65rem; }
+          .brand { margin-bottom:1.2rem; }
+          .hero { min-height:445px; padding:1.8rem 1.25rem 12rem; border-radius:20px; }
+          .hero h1 { font-size:1.85rem; line-height:1.3; max-width:100%; }
+          .hero p { font-size:.88rem; line-height:1.65; }
+          .character { right:1rem; bottom:-28px; transform:scale(.72); transform-origin:bottom right; }
+          .character:after { right:72px; top:-48px; }
+          .section-title { margin-top:1.8rem; }
+          .section-title h2 { font-size:1.3rem; }
+          .habit-card { min-height:auto; padding:1.1rem; margin-bottom:.25rem; }
+          .week-card { display:block; padding:1.2rem; }
+          .week-card > div + div { margin-top:1rem; }
+          .center-heading { text-align:left; margin:.8rem 0 1.4rem; }
+          .center-heading h1 { font-size:1.75rem; line-height:1.35; }
+          .center-heading p { font-size:.82rem; line-height:1.6; }
+          .form-card,.recommend-card { padding:1.1rem; border-radius:17px; }
+          .recommend-title { align-items:flex-start; }
+          .recommend-title h2 { font-size:1.3rem; }
+          .question-label { font-size:.95rem; }
+          .character-stage { min-height:220px; }
+          .badge-card { min-height:auto; }
+          .calendar-grid { gap:2px; }
+          .calendar-head { font-size:.58rem; padding:.2rem 0; }
+          .calendar-day { min-height:50px; padding:.25rem; border-radius:8px; font-size:.55rem; overflow:hidden; }
+          .calendar-day strong { font-size:.72rem; }
+          div.stButton > button { width:100%; min-height:46px; font-size:.92rem; }
+          input, textarea, [data-baseweb="select"] { font-size:16px!important; }
+          .stDownloadButton > button { min-height:46px; width:100%; }
         }
         </style>
         """,

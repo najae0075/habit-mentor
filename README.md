@@ -2,6 +2,14 @@
 
 컨디션과 일정에 맞춰 오늘 가능한 습관 목표를 추천하는 반응형 MVP입니다.
 
+## 운영 앱
+
+[데일리 페이스 열기](https://habit-mentor-najae0075.streamlit.app/)
+
+- 운영 브랜치: `main`
+- 앱 진입점: `app.py`
+- 배포 방식: Streamlit Community Cloud 자동 배포
+
 ## 로컬 실행
 
 Python 3.11~3.13 환경에서 다음 명령을 실행합니다.
@@ -28,3 +36,4 @@ streamlit run app.py
 - `requirements.txt` 버전은 검증 후에만 변경합니다.
 - 주기적으로 모바일 체크인, 추천 4단계, 목표 수락과 완료 기록을 회귀 점검합니다.
 - 민감한 컨디션·수면 기록을 로그에 출력하지 않습니다.
+- 배포 상태는 `python tests/check_deployment.py`로 확인할 수 있습니다.

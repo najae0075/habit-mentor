@@ -167,6 +167,24 @@ def save_remote() -> None:
         st.toast(str(error), icon="⚠️")
 
 
+def track_event(
+    event_name: str,
+    metadata: dict[str, object] | None = None,
+    event_key: str | None = None,
+) -> None:
+    """Record privacy-safe usage data without interrupting the user flow."""
+    backend = get_backend()
+    auth = st.session_state.auth
+    if not backend or not auth:
+        return
+    try:
+        backend.track_event(
+            auth["user"]["id"], auth["access_token"], event_name, metadata, event_key
+        )
+    except (SupabaseError, KeyError, TypeError):
+        return
+
+
 def load_remote() -> None:
     backend = get_backend()
     auth = st.session_state.auth
@@ -192,6 +210,19 @@ def load_remote() -> None:
         st.session_state.completed = set(st.session_state.completion_history.get(today_key, []))
         st.session_state.active_date = today_key
     st.session_state.remote_loaded = True
+    track_event("daily_active", event_key=f"daily_active:{today_key}")
+    previous_dates = sorted(day for day in st.session_state.checkin_dates if day < today_key)
+    if previous_dates:
+        try:
+            days_since_last = (date.fromisoformat(today_key) - date.fromisoformat(previous_dates[-1])).days
+        except ValueError:
+            days_since_last = 0
+        if days_since_last > 0:
+            track_event(
+                "user_returned",
+                {"days_since_last_checkin": days_since_last},
+                event_key=f"user_returned:{today_key}",
+            )
 
 
 def record_today() -> None:
@@ -469,6 +500,11 @@ def onboarding_screen() -> None:
             st.session_state.onboarding_complete = True
             record_today()
             save_remote()
+            track_event(
+                "onboarding_completed",
+                {"focus_habit_count": len(focus), "reminder_enabled": reminder_enabled},
+                event_key="onboarding_completed",
+            )
             st.session_state.flash = f"{clean_name}님, 데일리 페이스에 오신 걸 환영해요."
             st.rerun()
 
@@ -660,6 +696,7 @@ def today_page() -> None:
         unsafe_allow_html=True,
     )
     if st.button("오늘 체크인 시작  →", type="primary", use_container_width=True):
+        track_event("checkin_started", event_key=f"checkin_started:{date.today().isoformat()}")
         go("checkin")
 
     daily_habits = focused_habits()
@@ -688,8 +725,10 @@ def today_page() -> None:
             if st.button("완료 취소" if done else "완료 기록", key=f"done-{habit.key}", use_container_width=True):
                 if done:
                     st.session_state.completed.remove(habit.key)
+                    track_event("habit_completion_undone", {"habit_key": habit.key})
                 else:
                     st.session_state.completed.add(habit.key)
+                    track_event("habit_completed", {"habit_key": habit.key})
                     if habit.key in rested_today:
                         st.session_state.rest_history[today_key] = [key for key in rested_today if key != habit.key]
                 record_today()
@@ -764,6 +803,11 @@ def checkin_page() -> None:
                 "note": st.session_state.note,
             }
             save_remote()
+            track_event(
+                "checkin_completed",
+                {"focus_habit_count": len(daily_habits)},
+                event_key=f"checkin_completed:{today_key}",
+            )
             go("recommendation")
 
 
@@ -795,6 +839,16 @@ def recommendation_page() -> None:
             st.session_state.accepted[habit.key] = custom
             st.session_state.flash = f"{habit.title} 목표를 오늘 계획에 담았어요."
             save_remote()
+            track_event(
+                "recommendation_accepted",
+                {
+                    "habit_key": habit.key,
+                    "recommended_minutes": suggestion["minutes"],
+                    "accepted_minutes": custom,
+                    "modified": custom != suggestion["minutes"],
+                    "level": suggestion["level"],
+                },
+            )
             go("today")
     st.markdown('<div class="recovery">♡ 하루 쉬어도 기록은 사라지지 않아요. 내일 돌아오면 연속 기록을 이어드릴게요.</div>', unsafe_allow_html=True)
 
@@ -822,6 +876,10 @@ def quick_adjust_page() -> None:
         st.session_state.rest_history[today_key] = [key for key in st.session_state.rest_history.get(today_key, []) if key != habit.key]
         record_today()
         save_remote()
+        track_event(
+            "goal_reduced",
+            {"habit_key": habit.key, "reason": reason, "minutes": habit.minimum_minutes},
+        )
         st.session_state.flash = "오늘 가능한 최소 목표로 조정했어요. 이것도 충분한 전진이에요."
         go("today")
     if rest_col.button("오늘은 회복하기", use_container_width=True):
@@ -833,6 +891,7 @@ def quick_adjust_page() -> None:
         st.session_state.completed.discard(habit.key)
         record_today()
         save_remote()
+        track_event("rest_selected", {"habit_key": habit.key, "reason": reason})
         st.session_state.flash = "휴식을 오늘의 목표로 정했어요. 회복도 꾸준함의 일부예요."
         go("today")
 

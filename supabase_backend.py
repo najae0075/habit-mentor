@@ -112,6 +112,30 @@ class SupabaseBackend:
             extra_headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
 
+    def track_event(
+        self,
+        user_id: str,
+        access_token: str,
+        event_name: str,
+        metadata: dict[str, Any] | None = None,
+        event_key: str | None = None,
+    ) -> None:
+        payload = {
+            "user_id": user_id,
+            "event_name": event_name,
+            "metadata": metadata or {},
+        }
+        if event_key:
+            payload["event_key"] = event_key
+        self._data_request(
+            "POST",
+            "/rest/v1/analytics_events?on_conflict=user_id,event_key",
+            access_token,
+            payload=payload,
+            extra_headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
+            timeout_seconds=3,
+        )
+
     def _data_request(
         self,
         method: str,
@@ -119,6 +143,7 @@ class SupabaseBackend:
         access_token: str,
         payload: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
+        timeout_seconds: int = 20,
     ) -> requests.Response:
         headers = {**self.public_headers, "Authorization": f"Bearer {access_token}"}
         if extra_headers:
@@ -129,7 +154,7 @@ class SupabaseBackend:
                 f"{self.url}{path}",
                 headers=headers,
                 json=payload,
-                timeout=20,
+                timeout=timeout_seconds,
             )
         except requests.RequestException as error:
             raise SupabaseError("기록 서버에 연결할 수 없습니다.") from error

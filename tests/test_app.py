@@ -165,6 +165,21 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(len(app.multiselect), 1)
         self.assertTrue(any("설정 완료하고 시작하기" in button.label for button in app.button))
 
+    def test_difficult_feedback_reduces_next_recommendation(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        app.session_state["feedback_history"] = {yesterday: {"side_project": "버거웠어요"}}
+        app.session_state["condition"] = "좋음"
+        app.session_state["overtime"] = "없어요"
+        app.session_state["motivation"] = "높음"
+        app.session_state["available_minutes"] = 60
+        app.session_state["selected_habit"] = "side_project"
+        app.session_state["page"] = "recommendation"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(app.slider[0].value, 20)
+
 
 if __name__ == "__main__":
     unittest.main()

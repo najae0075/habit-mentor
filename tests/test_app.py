@@ -37,6 +37,15 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(len(app.multiselect), 1)
         self.assertLessEqual(len(app.multiselect[0].value), 3)
 
+    def test_records_page_shows_weekly_metrics(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "records"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.metric), 3)
+        self.assertEqual(app.metric[0].label, "주간 성공률")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 import streamlit as st
@@ -78,6 +78,10 @@ def initialize_state() -> None:
         "tone": "따뜻한 친구",
         "selected_habit": "side_project",
         "completed": set(),
+        "completion_history": {},
+        "focus_history": {},
+        "checkin_dates": [],
+        "active_date": date.today().isoformat(),
         "accepted": {},
         "custom_habits": [],
         "focus_habits": [habit.key for habit in HABITS],
@@ -109,6 +113,10 @@ def serializable_state() -> dict[str, object]:
         "note": st.session_state.note,
         "tone": st.session_state.tone,
         "completed": sorted(st.session_state.completed),
+        "completion_history": st.session_state.completion_history,
+        "focus_history": st.session_state.focus_history,
+        "checkin_dates": st.session_state.checkin_dates,
+        "active_date": st.session_state.active_date,
         "accepted": st.session_state.accepted,
         "custom_habits": st.session_state.custom_habits,
         "focus_habits": st.session_state.focus_habits,
@@ -137,11 +145,42 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
+    today_key = date.today().isoformat()
+    if st.session_state.active_date != today_key:
+        st.session_state.completed = set(st.session_state.completion_history.get(today_key, []))
+        st.session_state.active_date = today_key
     st.session_state.remote_loaded = True
+
+
+def record_today() -> None:
+    today_key = date.today().isoformat()
+    st.session_state.active_date = today_key
+    st.session_state.completion_history[today_key] = sorted(st.session_state.completed)
+    st.session_state.focus_history[today_key] = list(st.session_state.focus_habits)
+
+
+def weekly_stats() -> tuple[int, int, int]:
+    today = date.today()
+    dates = [(today - timedelta(days=offset)).isoformat() for offset in range(7)]
+    completed_count = 0
+    target_count = 0
+    for day in dates:
+        focus = set(st.session_state.focus_history.get(day, []))
+        completed = set(st.session_state.completion_history.get(day, []))
+        completed_count += len(completed & focus)
+        target_count += len(focus)
+    success_rate = round(completed_count / target_count * 100) if target_count else 0
+
+    streak = 0
+    cursor = today
+    while st.session_state.completion_history.get(cursor.isoformat()):
+        streak += 1
+        cursor -= timedelta(days=1)
+    return success_rate, streak, len(set(st.session_state.checkin_dates) & set(dates))
 
 
 def auth_screen(backend: SupabaseBackend) -> None:
@@ -292,7 +331,7 @@ def sidebar() -> None:
         if st.button("⌂  오늘", use_container_width=True):
             go("today")
         if st.button("◫  기록", use_container_width=True):
-            st.toast("상세 기록은 다음 버전에서 제공해요.")
+            go("records")
         if st.button("◇  습관", use_container_width=True):
             go("habits")
         if st.button("☆  캐릭터", use_container_width=True):
@@ -343,16 +382,18 @@ def today_page() -> None:
                     st.session_state.completed.remove(habit.key)
                 else:
                     st.session_state.completed.add(habit.key)
+                record_today()
                 save_remote()
                 st.rerun()
             if st.button("목표 조정", key=f"adjust-{habit.key}", use_container_width=True):
                 st.session_state.selected_habit = habit.key
                 go("recommendation")
 
+    success_rate, streak, _ = weekly_stats()
     st.markdown(
-        """<div class="week-card"><div><div class="eyebrow">THIS WEEK</div>
-        <h3>이번 주도 잘 돌아오고 있어요</h3><small>하루를 놓쳐도 다시 시작한 날이 2번이나 있었어요.</small></div>
-        <div><strong>72%</strong><br><small>주간 달성률</small></div></div>""",
+        f"""<div class="week-card"><div><div class="eyebrow">THIS WEEK</div>
+        <h3>이번 주도 잘 돌아오고 있어요</h3><small>현재 연속 달성 {streak}일 · 작은 실천도 온전한 기록이에요.</small></div>
+        <div><strong>{success_rate}%</strong><br><small>주간 성공률</small></div></div>""",
         unsafe_allow_html=True,
     )
 
@@ -382,6 +423,9 @@ def checkin_page() -> None:
                 st.warning("먼저 오늘의 핵심 습관을 선택해주세요.")
                 return
             st.session_state.selected_habit = daily_habits[0].key
+            today_key = date.today().isoformat()
+            if today_key not in st.session_state.checkin_dates:
+                st.session_state.checkin_dates.append(today_key)
             save_remote()
             go("recommendation")
 
@@ -418,6 +462,40 @@ def recommendation_page() -> None:
     st.markdown('<div class="recovery">♡ 하루 쉬어도 기록은 사라지지 않아요. 내일 돌아오면 연속 기록을 이어드릴게요.</div>', unsafe_allow_html=True)
 
 
+def records_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">MY RECORDS</div><h1>완벽함보다 중요한 건<br><span class="accent">다시 돌아온 기록이에요.</span></h1><p>작은 실천과 체크인이 쌓인 지난 7일을 확인해보세요.</p></div>', unsafe_allow_html=True)
+
+    success_rate, streak, checkin_days = weekly_stats()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("주간 성공률", f"{success_rate}%")
+    col2.metric("연속 달성일", f"{streak}일")
+    col3.metric("주간 체크인", f"{checkin_days}/7일")
+
+    st.subheader("최근 7일")
+    habits = {habit.key: habit for habit in all_habits()}
+    today = date.today()
+    for offset in range(7):
+        day = today - timedelta(days=offset)
+        day_key = day.isoformat()
+        focus = st.session_state.focus_history.get(day_key, [])
+        completed = set(st.session_state.completion_history.get(day_key, []))
+        labels = [habits[key].title for key in focus if key in completed and key in habits]
+        checked_in = day_key in st.session_state.checkin_dates
+        status = " · ".join(labels) if labels else "기록 없음"
+        checkin_badge = "체크인 완료" if checked_in else "체크인 없음"
+        st.markdown(f"**{day.month}/{day.day}** · {checkin_badge}  \n{status}")
+        st.divider()
+
+    if success_rate == 0:
+        st.info("아직 괜찮아요. 오늘 단 하나의 작은 습관부터 기록해보세요.")
+    elif success_rate < 70:
+        st.success("흐름을 만들고 있어요. 놓친 날보다 다시 시작한 날을 기억해요.")
+    else:
+        st.success("꾸준한 흐름이 보여요. 지금의 현실적인 속도를 유지해보세요.")
+
+
 def habits_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -435,6 +513,7 @@ def habits_page() -> None:
     )
     if st.button("핵심 습관 저장", type="primary"):
         st.session_state.focus_habits = selected
+        record_today()
         save_remote()
         st.success("오늘의 핵심 습관을 저장했어요.")
 
@@ -501,5 +580,7 @@ elif st.session_state.page == "recommendation":
     recommendation_page()
 elif st.session_state.page == "habits":
     habits_page()
+elif st.session_state.page == "records":
+    records_page()
 else:
     today_page()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import pbkdf2_hmac
 from hmac import compare_digest
@@ -99,6 +100,7 @@ def initialize_state() -> None:
         "reminder_history": {},
         "app_lock": None,
         "app_unlocked": False,
+        "calendar_offset": 0,
         "accepted": {},
         "custom_habits": [],
         "focus_habits": [habit.key for habit in HABITS],
@@ -227,6 +229,20 @@ def streak_details() -> tuple[int, str | None]:
             break
         cursor -= timedelta(days=1)
     return streak, recovery_day
+
+
+def offset_month(offset: int) -> tuple[int, int]:
+    today = date.today()
+    month_index = today.year * 12 + today.month - 1 + offset
+    return divmod(month_index, 12)[0], divmod(month_index, 12)[1] + 1
+
+
+def calendar_summary(year: int, month: int) -> tuple[int, int, int]:
+    prefix = f"{year:04d}-{month:02d}-"
+    completions = sum(len(set(items)) for day, items in st.session_state.completion_history.items() if day.startswith(prefix))
+    rest_days = sum(bool(items) for day, items in st.session_state.rest_history.items() if day.startswith(prefix))
+    checkins = sum(day.startswith(prefix) for day in set(st.session_state.checkin_dates))
+    return completions, rest_days, checkins
 
 
 def character_stats() -> tuple[int, str, int, int]:
@@ -462,6 +478,14 @@ def inject_styles() -> None:
         .character-avatar { display:grid; place-items:center; width:150px; height:170px; border-radius:48% 52% 42% 45%; background:#91ad99; color:#31483e; font-size:2rem; box-shadow:0 15px 25px #385d4e22; }
         .badge-card { min-height:125px; padding:1.1rem; border:1px solid var(--line); border-radius:16px; background:#fbfaf6; }
         .badge-card.locked { opacity:.45; filter:grayscale(1); }
+        .calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin:1rem 0; }
+        .calendar-head { text-align:center; color:var(--muted); font-size:.72rem; padding:.4rem; }
+        .calendar-day { min-height:76px; padding:.55rem; border:1px solid var(--line); border-radius:12px; background:#fbfaf6; font-size:.72rem; }
+        .calendar-day.empty { visibility:hidden; }
+        .calendar-day strong { display:block; font-size:.85rem; margin-bottom:.3rem; }
+        .calendar-day.completed { background:#e7efe8; border-color:#aac0ae; }
+        .calendar-day.recovery { background:#f6e8df; border-color:#d8b6a8; }
+        .calendar-day.checked { box-shadow:inset 0 -3px #91ad99; }
         div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:2.8rem; }
         div.stButton > button[kind="primary"] { background:var(--dark); border-color:var(--dark); }
         [data-testid="stMetricValue"] { color:var(--coral); }
@@ -474,6 +498,8 @@ def inject_styles() -> None:
           .center-heading { text-align:left; }
           .center-heading h1 { font-size:1.9rem; }
           .form-card,.recommend-card { padding:1.2rem; }
+          .calendar-grid { gap:3px; }
+          .calendar-day { min-height:58px; padding:.35rem; font-size:.6rem; }
         }
         </style>
         """,
@@ -676,6 +702,50 @@ def quick_adjust_page() -> None:
         go("today")
 
 
+def monthly_calendar() -> None:
+    previous, heading, following = st.columns([1, 3, 1])
+    if previous.button("← 이전 달", use_container_width=True):
+        st.session_state.calendar_offset -= 1
+        st.rerun()
+    year, month = offset_month(st.session_state.calendar_offset)
+    heading.markdown(f"<h3 style='text-align:center'>{year}년 {month}월</h3>", unsafe_allow_html=True)
+    if following.button("다음 달 →", use_container_width=True):
+        st.session_state.calendar_offset += 1
+        st.rerun()
+
+    completed_count, rest_days, checkins = calendar_summary(year, month)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("월간 완료", f"{completed_count}회")
+    col2.metric("회복일", f"{rest_days}일")
+    col3.metric("체크인", f"{checkins}일")
+
+    first_weekday, days_in_month = monthrange(year, month)
+    cells = [f'<div class="calendar-head">{label}</div>' for label in ("월", "화", "수", "목", "금", "토", "일")]
+    cells.extend('<div class="calendar-day empty"></div>' for _ in range(first_weekday))
+    for day_number in range(1, days_in_month + 1):
+        day_key = f"{year:04d}-{month:02d}-{day_number:02d}"
+        completed = len(set(st.session_state.completion_history.get(day_key, [])))
+        rested = bool(st.session_state.rest_history.get(day_key, []))
+        checked = day_key in st.session_state.checkin_dates
+        classes = ["calendar-day"]
+        if completed:
+            classes.append("completed")
+        if rested:
+            classes.append("recovery")
+        if checked:
+            classes.append("checked")
+        details = []
+        if completed:
+            details.append(f"✓ {completed}개")
+        if rested:
+            details.append("♡ 회복")
+        if checked and not details:
+            details.append("· 체크인")
+        cells.append(f'<div class="{" ".join(classes)}"><strong>{day_number}</strong>{"<br>".join(details)}</div>')
+    st.markdown(f'<div class="calendar-grid">{"".join(cells)}</div>', unsafe_allow_html=True)
+    st.caption("초록색은 습관 완료, 살구색은 계획한 회복, 아래 선은 체크인을 뜻해요.")
+
+
 def records_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -716,6 +786,10 @@ def records_page() -> None:
         st.success("흐름을 만들고 있어요. 놓친 날보다 다시 시작한 날을 기억해요.")
     else:
         st.success("꾸준한 흐름이 보여요. 지금의 현실적인 속도를 유지해보세요.")
+
+    st.divider()
+    st.subheader("월간 캘린더")
+    monthly_calendar()
 
 
 def character_page() -> None:

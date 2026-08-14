@@ -85,6 +85,8 @@ def initialize_state() -> None:
         "focus_history": {},
         "checkin_dates": [],
         "active_date": date.today().isoformat(),
+        "adjustment_history": {},
+        "rest_history": {},
         "app_lock": None,
         "app_unlocked": False,
         "accepted": {},
@@ -122,6 +124,8 @@ def serializable_state() -> dict[str, object]:
         "focus_history": st.session_state.focus_history,
         "checkin_dates": st.session_state.checkin_dates,
         "active_date": st.session_state.active_date,
+        "adjustment_history": st.session_state.adjustment_history,
+        "rest_history": st.session_state.rest_history,
         "app_lock": st.session_state.app_lock,
         "accepted": st.session_state.accepted,
         "custom_habits": st.session_state.custom_habits,
@@ -151,7 +155,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "app_lock"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "app_lock"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -176,6 +180,7 @@ def weekly_stats() -> tuple[int, int, int]:
     target_count = 0
     for day in dates:
         focus = set(st.session_state.focus_history.get(day, []))
+        focus -= set(st.session_state.rest_history.get(day, []))
         completed = set(st.session_state.completion_history.get(day, []))
         completed_count += len(completed & focus)
         target_count += len(focus)
@@ -418,14 +423,19 @@ def today_page() -> None:
             go("habits")
         return
     cols = st.columns(len(daily_habits))
+    today_key = date.today().isoformat()
+    rested_today = set(st.session_state.rest_history.get(today_key, []))
     for col, habit in zip(cols, daily_habits):
         with col:
             done = habit.key in st.session_state.completed
+            resting = habit.key in rested_today
             suggested = st.session_state.accepted.get(habit.key, habit.reduced_minutes)
+            target_label = "오늘은 회복하기" if resting else f"오늘 추천 · {suggested}분"
+            status_label = "휴식도 오늘의 목표예요" if resting else ('✓ 완료했어요' if done else '작게 시작해도 충분해요')
             st.markdown(
                 f"""<div class="habit-card"><span class="habit-icon">{habit.icon}</span>
                 <div class="category">{habit.category}</div><h3>{habit.title}</h3>
-                <span class="pill">오늘 추천 · {suggested}분</span><p>{'✓ 완료했어요' if done else '작게 시작해도 충분해요'}</p></div>""",
+                <span class="pill">{target_label}</span><p>{status_label}</p></div>""",
                 unsafe_allow_html=True,
             )
             if st.button("완료 취소" if done else "완료 기록", key=f"done-{habit.key}", use_container_width=True):
@@ -433,12 +443,17 @@ def today_page() -> None:
                     st.session_state.completed.remove(habit.key)
                 else:
                     st.session_state.completed.add(habit.key)
+                    if habit.key in rested_today:
+                        st.session_state.rest_history[today_key] = [key for key in rested_today if key != habit.key]
                 record_today()
                 save_remote()
                 st.rerun()
             if st.button("목표 조정", key=f"adjust-{habit.key}", use_container_width=True):
                 st.session_state.selected_habit = habit.key
                 go("recommendation")
+            if st.button("오늘 어려워요", key=f"quick-{habit.key}", use_container_width=True):
+                st.session_state.selected_habit = habit.key
+                go("quick_adjust")
 
     success_rate, streak, _ = weekly_stats()
     st.markdown(
@@ -513,6 +528,44 @@ def recommendation_page() -> None:
     st.markdown('<div class="recovery">♡ 하루 쉬어도 기록은 사라지지 않아요. 내일 돌아오면 연속 기록을 이어드릴게요.</div>', unsafe_allow_html=True)
 
 
+def quick_adjust_page() -> None:
+    habit = next((item for item in all_habits() if item.key == st.session_state.selected_habit), None)
+    if habit is None:
+        st.warning("조정할 습관을 찾지 못했어요.")
+        return
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown(f'<div class="center-heading"><div class="eyebrow">QUICK RESET</div><h1>계획이 달라져도<br><span class="accent">포기한 건 아니에요.</span></h1><p>{habit.title}을 지금 상황에 맞게 다시 조정해요.</p></div>', unsafe_allow_html=True)
+
+    reason = st.segmented_control(
+        "무엇이 달라졌나요?",
+        ["야근", "피로", "일정 변경", "의욕 저하"],
+        default="야근",
+    )
+    st.info(f"{reason}이 있는 날에는 {habit.minimum_minutes}분의 최소 목표나 충분한 휴식을 추천해요.")
+    reduce_col, rest_col = st.columns(2)
+    if reduce_col.button(f"{habit.minimum_minutes}분으로 줄이기", type="primary", use_container_width=True):
+        today_key = date.today().isoformat()
+        st.session_state.accepted[habit.key] = habit.minimum_minutes
+        st.session_state.adjustment_history.setdefault(today_key, {})[habit.key] = reason
+        st.session_state.rest_history[today_key] = [key for key in st.session_state.rest_history.get(today_key, []) if key != habit.key]
+        record_today()
+        save_remote()
+        st.session_state.flash = "오늘 가능한 최소 목표로 조정했어요. 이것도 충분한 전진이에요."
+        go("today")
+    if rest_col.button("오늘은 회복하기", use_container_width=True):
+        today_key = date.today().isoformat()
+        rested = set(st.session_state.rest_history.get(today_key, []))
+        rested.add(habit.key)
+        st.session_state.rest_history[today_key] = sorted(rested)
+        st.session_state.adjustment_history.setdefault(today_key, {})[habit.key] = reason
+        st.session_state.completed.discard(habit.key)
+        record_today()
+        save_remote()
+        st.session_state.flash = "휴식을 오늘의 목표로 정했어요. 회복도 꾸준함의 일부예요."
+        go("today")
+
+
 def records_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -532,7 +585,9 @@ def records_page() -> None:
         day_key = day.isoformat()
         focus = st.session_state.focus_history.get(day_key, [])
         completed = set(st.session_state.completion_history.get(day_key, []))
+        rested = set(st.session_state.rest_history.get(day_key, []))
         labels = [habits[key].title for key in focus if key in completed and key in habits]
+        labels.extend(f"{habits[key].title} (회복)" for key in focus if key in rested and key in habits)
         checked_in = day_key in st.session_state.checkin_dates
         status = " · ".join(labels) if labels else "기록 없음"
         checkin_badge = "체크인 완료" if checked_in else "체크인 없음"
@@ -709,6 +764,8 @@ if st.session_state.page == "checkin":
     checkin_page()
 elif st.session_state.page == "recommendation":
     recommendation_page()
+elif st.session_state.page == "quick_adjust":
+    quick_adjust_page()
 elif st.session_state.page == "habits":
     habits_page()
 elif st.session_state.page == "records":

@@ -9,6 +9,15 @@ APP = Path(__file__).parents[1] / "app.py"
 
 
 class DailyPaceTest(unittest.TestCase):
+    def test_responsive_layout_covers_tablet_mobile_and_touch_targets(self):
+        source = APP.read_text(encoding="utf-8")
+        self.assertIn('initial_sidebar_state="auto"', source)
+        self.assertIn("(min-width:701px) and (max-width:1024px)", source)
+        self.assertIn("@media (max-width:700px)", source)
+        self.assertIn("flex-direction:column", source)
+        self.assertIn("min-height:46px", source)
+        self.assertIn('[data-testid="stDataFrame"]', source)
+
     def test_admin_dashboard_avoids_altair_chart_dependency(self):
         source = APP.read_text(encoding="utf-8")
         self.assertNotIn("st.bar_chart(", source)

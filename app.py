@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from uuid import uuid4
 
 import streamlit as st
 
@@ -33,6 +34,28 @@ HABITS = [
     Habit("reading", "▤", "마음", "잠들기 전 독서", 20, 10, 5),
 ]
 
+
+def habit_to_dict(habit: Habit) -> dict[str, object]:
+    return {
+        "key": habit.key,
+        "icon": habit.icon,
+        "category": habit.category,
+        "title": habit.title,
+        "default_minutes": habit.default_minutes,
+        "reduced_minutes": habit.reduced_minutes,
+        "minimum_minutes": habit.minimum_minutes,
+    }
+
+
+def all_habits() -> list[Habit]:
+    custom = [Habit(**item) for item in st.session_state.custom_habits]
+    return [*HABITS, *custom]
+
+
+def focused_habits() -> list[Habit]:
+    selected = set(st.session_state.focus_habits)
+    return [habit for habit in all_habits() if habit.key in selected][:3]
+
 TONE_COPY = {
     "따뜻한 친구": ("오늘의 속도도 충분히 좋아요.", "지금 가능한 만큼만 해봐요."),
     "현실적인 코치": ("지속 가능한 목표가 가장 좋은 목표예요.", "오늘의 조건에 맞춰 계획을 조정했어요."),
@@ -56,6 +79,8 @@ def initialize_state() -> None:
         "selected_habit": "side_project",
         "completed": set(),
         "accepted": {},
+        "custom_habits": [],
+        "focus_habits": [habit.key for habit in HABITS],
         "flash": "",
         "auth": None,
         "remote_loaded": False,
@@ -85,6 +110,8 @@ def serializable_state() -> dict[str, object]:
         "tone": st.session_state.tone,
         "completed": sorted(st.session_state.completed),
         "accepted": st.session_state.accepted,
+        "custom_habits": st.session_state.custom_habits,
+        "focus_habits": st.session_state.focus_habits,
     }
 
 
@@ -110,7 +137,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -267,7 +294,7 @@ def sidebar() -> None:
         if st.button("◫  기록", use_container_width=True):
             st.toast("상세 기록은 다음 버전에서 제공해요.")
         if st.button("◇  습관", use_container_width=True):
-            st.toast("습관 관리는 다음 버전에서 제공해요.")
+            go("habits")
         if st.button("☆  캐릭터", use_container_width=True):
             st.toast("모리가 한 걸음씩 자라고 있어요.")
         st.divider()
@@ -281,7 +308,7 @@ def sidebar() -> None:
 
 def today_page() -> None:
     today = date.today()
-    completed = len(st.session_state.completed)
+    completed = len(set(st.session_state.completed) & set(st.session_state.focus_habits))
     st.caption(f"{today.month}월 {today.day}일 · 오늘의 페이스")
     st.markdown(
         f"""<section class="hero"><div class="eyebrow">GOOD DAY</div>
@@ -293,9 +320,15 @@ def today_page() -> None:
     if st.button("오늘 체크인 시작  →", type="primary", use_container_width=True):
         go("checkin")
 
-    st.markdown(f'<div class="section-title"><div class="eyebrow">TODAY\'S PACE</div><h2>오늘의 핵심 습관 · {completed}/3 완료</h2></div>', unsafe_allow_html=True)
-    cols = st.columns(3)
-    for col, habit in zip(cols, HABITS):
+    daily_habits = focused_habits()
+    st.markdown(f'<div class="section-title"><div class="eyebrow">TODAY\'S PACE</div><h2>오늘의 핵심 습관 · {completed}/{len(daily_habits)} 완료</h2></div>', unsafe_allow_html=True)
+    if not daily_habits:
+        st.info("오늘 집중할 습관을 선택해주세요.")
+        if st.button("핵심 습관 선택하기"):
+            go("habits")
+        return
+    cols = st.columns(len(daily_habits))
+    for col, habit in zip(cols, daily_habits):
         with col:
             done = habit.key in st.session_state.completed
             suggested = st.session_state.accepted.get(habit.key, habit.reduced_minutes)
@@ -344,13 +377,22 @@ def checkin_page() -> None:
         st.session_state.note = st.text_area("오늘의 한마디 (선택)", st.session_state.note, placeholder="예: 회의가 길어서 머리가 조금 복잡해요", max_chars=120)
         st.markdown("</div>", unsafe_allow_html=True)
         if st.button("나에게 맞는 목표 보기  →", type="primary", use_container_width=True):
-            st.session_state.selected_habit = HABITS[0].key
+            daily_habits = focused_habits()
+            if not daily_habits:
+                st.warning("먼저 오늘의 핵심 습관을 선택해주세요.")
+                return
+            st.session_state.selected_habit = daily_habits[0].key
             save_remote()
             go("recommendation")
 
 
 def recommendation_page() -> None:
-    habit = next(h for h in HABITS if h.key == st.session_state.selected_habit)
+    habit = next((h for h in all_habits() if h.key == st.session_state.selected_habit), None)
+    if habit is None:
+        st.warning("추천할 습관이 없습니다. 먼저 핵심 습관을 선택해주세요.")
+        if st.button("습관 선택하기"):
+            go("habits")
+        return
     suggestion = recommend(habit)
     if st.button("← 체크인 수정하기"):
         go("checkin")
@@ -376,6 +418,71 @@ def recommendation_page() -> None:
     st.markdown('<div class="recovery">♡ 하루 쉬어도 기록은 사라지지 않아요. 내일 돌아오면 연속 기록을 이어드릴게요.</div>', unsafe_allow_html=True)
 
 
+def habits_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">MY HABITS</div><h1>나에게 필요한 습관을<br><span class="accent">직접 만들어보세요.</span></h1><p>등록은 자유롭게, 오늘 집중할 습관은 최대 3개로 가볍게 유지해요.</p></div>', unsafe_allow_html=True)
+
+    habits = all_habits()
+    labels = {habit.key: f"{habit.icon} {habit.title}" for habit in habits}
+    valid_focus = [key for key in st.session_state.focus_habits if key in labels]
+    selected = st.multiselect(
+        "오늘의 핵심 습관 (최대 3개)",
+        options=list(labels),
+        default=valid_focus,
+        format_func=lambda key: labels[key],
+        max_selections=3,
+    )
+    if st.button("핵심 습관 저장", type="primary"):
+        st.session_state.focus_habits = selected
+        save_remote()
+        st.success("오늘의 핵심 습관을 저장했어요.")
+
+    st.divider()
+    st.subheader("새 습관 추가")
+    with st.form("add-habit", clear_on_submit=True):
+        title = st.text_input("습관 이름", placeholder="예: 부모님께 전화하기")
+        category = st.selectbox("카테고리", ["운동", "공부", "독서", "수면", "식습관", "명상", "집안일", "관계", "기타"])
+        default_minutes = st.number_input("기본 목표 시간", min_value=5, max_value=180, value=30, step=5)
+        minimum_minutes = st.number_input("최소 목표 시간", min_value=1, max_value=30, value=5, step=1)
+        submitted = st.form_submit_button("습관 추가", use_container_width=True)
+    if submitted:
+        clean_title = title.strip()
+        if not clean_title:
+            st.warning("습관 이름을 입력해주세요.")
+        elif minimum_minutes > default_minutes:
+            st.warning("최소 목표는 기본 목표보다 작아야 해요.")
+        else:
+            habit = Habit(
+                key=f"custom-{uuid4().hex[:12]}",
+                icon="○",
+                category=category,
+                title=clean_title,
+                default_minutes=int(default_minutes),
+                reduced_minutes=max(int(minimum_minutes), int(default_minutes) // 2),
+                minimum_minutes=int(minimum_minutes),
+            )
+            st.session_state.custom_habits.append(habit_to_dict(habit))
+            if len(st.session_state.focus_habits) < 3:
+                st.session_state.focus_habits.append(habit.key)
+            save_remote()
+            st.success(f"'{clean_title}' 습관을 추가했어요.")
+            st.rerun()
+
+    if st.session_state.custom_habits:
+        st.subheader("내가 만든 습관")
+        for item in list(st.session_state.custom_habits):
+            left, right = st.columns([5, 1])
+            left.markdown(f"**{item['title']}** · {item['category']} · 기본 {item['default_minutes']}분 / 최소 {item['minimum_minutes']}분")
+            if right.button("삭제", key=f"delete-{item['key']}"):
+                st.session_state.custom_habits = [habit for habit in st.session_state.custom_habits if habit["key"] != item["key"]]
+                st.session_state.focus_habits = [key for key in st.session_state.focus_habits if key != item["key"]]
+                st.session_state.completed.discard(item["key"])
+                st.session_state.accepted.pop(item["key"], None)
+                save_remote()
+                st.rerun()
+
+
 initialize_state()
 inject_styles()
 backend = get_backend()
@@ -392,5 +499,7 @@ if st.session_state.page == "checkin":
     checkin_page()
 elif st.session_state.page == "recommendation":
     recommendation_page()
+elif st.session_state.page == "habits":
+    habits_page()
 else:
     today_page()

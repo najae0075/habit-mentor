@@ -28,6 +28,15 @@ class DailyPaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("이 목표로 할게요" in button.label for button in app.button))
 
+    def test_habit_management_page(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "habits"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.multiselect), 1)
+        self.assertLessEqual(len(app.multiselect[0].value), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

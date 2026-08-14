@@ -10,6 +10,20 @@ class SupabaseBackendTest(unittest.TestCase):
     def setUp(self):
         self.backend = SupabaseBackend("https://example.supabase.co/", "sb_publishable_test")
 
+    def test_normalizes_rest_endpoint_to_project_url(self):
+        backend = SupabaseBackend(
+            "https://example.supabase.co/rest/v1",
+            "sb_publishable_test",
+        )
+        self.assertEqual(backend.url, "https://example.supabase.co")
+
+    def test_normalizes_quoted_project_url(self):
+        backend = SupabaseBackend(
+            '"https://example.supabase.co/"',
+            "sb_publishable_test",
+        )
+        self.assertEqual(backend.url, "https://example.supabase.co")
+
     @patch("supabase_backend.requests.post")
     def test_sign_in_returns_session(self, post):
         post.return_value = Mock(
@@ -55,6 +69,17 @@ class SupabaseBackendTest(unittest.TestCase):
             status_code=200,
         )
         with self.assertRaisesRegex(SupabaseError, "SUPABASE_URL"):
+            self.backend.sign_up("user@example.com", "password123")
+
+    @patch("supabase_backend.requests.post")
+    def test_not_found_response_explains_project_url_format(self, post):
+        post.return_value = Mock(
+            ok=False,
+            content=b"not found",
+            headers={"Content-Type": "text/plain"},
+            status_code=404,
+        )
+        with self.assertRaisesRegex(SupabaseError, "프로젝트참조.supabase.co"):
             self.backend.sign_up("user@example.com", "password123")
 
     @patch("supabase_backend.requests.request")

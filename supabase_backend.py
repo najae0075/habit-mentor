@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -12,8 +13,18 @@ class SupabaseError(RuntimeError):
 
 class SupabaseBackend:
     def __init__(self, url: str, key: str) -> None:
-        self.url = url.rstrip("/")
+        self.url = self._normalize_project_url(url)
         self.key = key
+
+    @staticmethod
+    def _normalize_project_url(url: str) -> str:
+        cleaned = url.strip().strip('"').strip("'").rstrip("/")
+        parsed = urlsplit(cleaned)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            # Users often copy the REST/Auth endpoint instead of the Project URL.
+            if parsed.path.rstrip("/") in {"/rest/v1", "/auth/v1"}:
+                return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+        return cleaned
 
     @property
     def public_headers(self) -> dict[str, str]:
@@ -44,6 +55,12 @@ class SupabaseBackend:
         data = self._safe_json(response)
         if not response.ok:
             message = data.get("msg") or data.get("message") or data.get("error_description")
+            if response.status_code == 404:
+                raise SupabaseError(
+                    "Supabase 프로젝트 주소를 찾지 못했습니다. Streamlit Secrets의 "
+                    "SUPABASE_URL에는 https://프로젝트참조.supabase.co 형식의 "
+                    "Project URL만 입력해주세요."
+                )
             raise SupabaseError(message or f"인증 요청을 처리하지 못했습니다. (HTTP {response.status_code})")
         if not data:
             raise SupabaseError(

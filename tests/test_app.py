@@ -57,6 +57,19 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(app.metric[0].value, "Lv.1")
         self.assertEqual(app.metric[1].label, "성장 포인트")
 
+    def test_app_lock_setup_and_locked_screen(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "security"
+        app.run(timeout=15)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.text_input), 2)
+
+        app.session_state["app_lock"] = {"salt": "test", "digest": "invalid"}
+        app.session_state["app_unlocked"] = False
+        app.run(timeout=15)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("잠금 해제" in button.label for button in app.button))
+
 
 if __name__ == "__main__":
     unittest.main()

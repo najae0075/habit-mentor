@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from hashlib import pbkdf2_hmac
+from hmac import compare_digest
+from secrets import token_hex
 from uuid import uuid4
 
 import streamlit as st
@@ -82,6 +85,8 @@ def initialize_state() -> None:
         "focus_history": {},
         "checkin_dates": [],
         "active_date": date.today().isoformat(),
+        "app_lock": None,
+        "app_unlocked": False,
         "accepted": {},
         "custom_habits": [],
         "focus_habits": [habit.key for habit in HABITS],
@@ -117,6 +122,7 @@ def serializable_state() -> dict[str, object]:
         "focus_history": st.session_state.focus_history,
         "checkin_dates": st.session_state.checkin_dates,
         "active_date": st.session_state.active_date,
+        "app_lock": st.session_state.app_lock,
         "accepted": st.session_state.accepted,
         "custom_habits": st.session_state.custom_habits,
         "focus_habits": st.session_state.focus_habits,
@@ -145,7 +151,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "app_lock"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -197,6 +203,17 @@ def character_stats() -> tuple[int, str, int, int]:
     return points, name, level, next_goal
 
 
+def pin_digest(pin: str, salt: str) -> str:
+    return pbkdf2_hmac("sha256", pin.encode(), bytes.fromhex(salt), 310_000).hex()
+
+
+def valid_pin(pin: str) -> bool:
+    lock = st.session_state.app_lock
+    if not lock:
+        return False
+    return compare_digest(pin_digest(pin, lock["salt"]), lock["digest"])
+
+
 def auth_screen(backend: SupabaseBackend) -> None:
     st.markdown('<div class="center-heading"><div class="eyebrow">WELCOME</div><h1>나의 속도를<br><span class="accent">안전하게 기록해요.</span></h1><p>로그인하면 다른 기기에서도 습관 기록을 이어갈 수 있어요.</p></div>', unsafe_allow_html=True)
     _, center, _ = st.columns([1, 1.3, 1])
@@ -230,6 +247,19 @@ def auth_screen(backend: SupabaseBackend) -> None:
                 st.rerun()
             else:
                 st.success("확인 이메일을 보냈어요. 이메일 인증 후 로그인해주세요.")
+
+
+def lock_screen() -> None:
+    st.markdown('<div class="center-heading"><div class="eyebrow">APP LOCK</div><h1>나만의 기록을<br><span class="accent">안전하게 잠갔어요.</span></h1><p>설정한 앱 잠금 PIN을 입력해주세요.</p></div>', unsafe_allow_html=True)
+    _, center, _ = st.columns([1, 1.2, 1])
+    with center, st.form("unlock-app"):
+        pin = st.text_input("앱 잠금 PIN", type="password", max_chars=6)
+        if st.form_submit_button("잠금 해제", type="primary", use_container_width=True):
+            if valid_pin(pin):
+                st.session_state.app_unlocked = True
+                st.rerun()
+            else:
+                st.error("PIN이 올바르지 않아요.")
 
 
 def go(page: str) -> None:
@@ -354,12 +384,15 @@ def sidebar() -> None:
             go("habits")
         if st.button("☆  캐릭터", use_container_width=True):
             go("character")
+        if st.button("⚿  앱 잠금", use_container_width=True):
+            go("security")
         st.divider()
         st.session_state.tone = st.selectbox("멘토 말투", list(TONE_COPY), index=list(TONE_COPY).index(st.session_state.tone))
         st.markdown('<div class="profile"><strong>민지</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
         if st.session_state.auth and st.button("로그아웃", use_container_width=True):
             st.session_state.auth = None
             st.session_state.remote_loaded = False
+            st.session_state.app_unlocked = False
             st.rerun()
 
 
@@ -548,6 +581,49 @@ def character_page() -> None:
     st.info("추가 캐릭터와 특별 꾸미기 아이템은 구독 기능으로 확장할 예정이에요.")
 
 
+def security_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">PRIVACY</div><h1>앱을 한 번 더<br><span class="accent">안전하게 잠그세요.</span></h1><p>로그인 비밀번호와 다른 4~6자리 숫자 PIN을 사용해요.</p></div>', unsafe_allow_html=True)
+
+    if not st.session_state.app_lock:
+        with st.form("set-app-lock"):
+            pin = st.text_input("새 PIN", type="password", max_chars=6)
+            confirmation = st.text_input("새 PIN 확인", type="password", max_chars=6)
+            submitted = st.form_submit_button("앱 잠금 설정", type="primary", use_container_width=True)
+        if submitted:
+            if not pin.isdigit() or not 4 <= len(pin) <= 6:
+                st.warning("PIN은 4~6자리 숫자로 입력해주세요.")
+            elif pin != confirmation:
+                st.warning("두 PIN이 일치하지 않아요.")
+            else:
+                salt = token_hex(16)
+                st.session_state.app_lock = {"salt": salt, "digest": pin_digest(pin, salt)}
+                st.session_state.app_unlocked = True
+                save_remote()
+                st.success("앱 잠금을 설정했어요.")
+                st.rerun()
+        return
+
+    st.success("앱 잠금이 켜져 있어요. PIN 원문은 저장하지 않습니다.")
+    if st.button("지금 잠그기", type="primary", use_container_width=True):
+        st.session_state.app_unlocked = False
+        st.rerun()
+
+    with st.form("disable-app-lock"):
+        current_pin = st.text_input("현재 PIN", type="password", max_chars=6)
+        disable = st.form_submit_button("앱 잠금 끄기", use_container_width=True)
+    if disable:
+        if not valid_pin(current_pin):
+            st.error("PIN이 올바르지 않아요.")
+        else:
+            st.session_state.app_lock = None
+            st.session_state.app_unlocked = False
+            save_remote()
+            st.success("앱 잠금을 해제했어요.")
+            st.rerun()
+
+
 def habits_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -621,6 +697,9 @@ if backend and not st.session_state.auth:
     auth_screen(backend)
     st.stop()
 load_remote()
+if st.session_state.app_lock and not st.session_state.app_unlocked:
+    lock_screen()
+    st.stop()
 sidebar()
 if st.session_state.flash:
     st.toast(st.session_state.flash, icon="🌿")
@@ -636,5 +715,7 @@ elif st.session_state.page == "records":
     records_page()
 elif st.session_state.page == "character":
     character_page()
+elif st.session_state.page == "security":
+    security_page()
 else:
     today_page()

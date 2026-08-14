@@ -136,12 +136,14 @@ class SupabaseBackend:
             timeout_seconds=3,
         )
 
-    def load_admin_metrics(self, access_token: str) -> dict[str, Any]:
+    def load_admin_metrics(self, access_token: str, days: int = 7) -> dict[str, Any]:
+        if days not in {1, 7, 30}:
+            raise ValueError("운영 지표 기간은 1일, 7일 또는 30일이어야 합니다.")
         response = self._data_request(
             "POST",
             "/rest/v1/rpc/admin_analytics_dashboard",
             access_token,
-            payload={},
+            payload={"p_days": days},
         )
         data = response.json()
         if not isinstance(data, dict):

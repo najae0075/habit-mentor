@@ -1248,10 +1248,18 @@ def admin_page() -> None:
         st.error("운영 지표를 불러오려면 관리자 계정으로 로그인해주세요.")
         return
 
+    period_label = st.segmented_control(
+        "조회 기간",
+        ["오늘", "최근 7일", "최근 30일"],
+        default="최근 7일",
+    )
+    period_days = {"오늘": 1, "최근 7일": 7, "최근 30일": 30}[period_label]
     refresh = st.button("지표 새로고침", type="primary")
-    if refresh or st.session_state.admin_metrics is None:
+    cached = st.session_state.admin_metrics
+    if refresh or not isinstance(cached, dict) or cached.get("_period_days") != period_days:
         try:
-            st.session_state.admin_metrics = backend.load_admin_metrics(auth["access_token"])
+            loaded = backend.load_admin_metrics(auth["access_token"], period_days)
+            st.session_state.admin_metrics = {**loaded, "_period_days": period_days}
         except (SupabaseError, KeyError, TypeError) as error:
             st.error(f"운영 지표를 불러오지 못했습니다: {error}")
             return
@@ -1259,8 +1267,8 @@ def admin_page() -> None:
     metrics = st.session_state.admin_metrics or {}
     top = st.columns(4)
     top[0].metric("가입 사용자", f"{metrics.get('registered_users', 0):,}명")
-    top[1].metric("오늘 활성 사용자", f"{metrics.get('active_users', 0):,}명")
-    top[2].metric("오늘 체크인율", f"{metrics.get('checkin_rate') or 0}%")
+    top[1].metric(f"{period_label} 활성 사용자", f"{metrics.get('active_users', 0):,}명")
+    top[2].metric(f"{period_label} 체크인율", f"{metrics.get('checkin_rate') or 0}%")
     top[3].metric("다음 날 복귀", f"{metrics.get('next_day_returns', 0):,}명")
 
     retention = st.columns(2)
@@ -1268,7 +1276,12 @@ def admin_page() -> None:
     retention[1].metric("30일 유지율", f"{metrics.get('retention_30') or 0}%")
     st.caption("유지율은 가입일로부터 정확히 7일 또는 30일째 앱을 다시 사용한 사용자 비율입니다.")
 
-    st.subheader("오늘의 핵심 행동")
+    conversion = st.columns(3)
+    conversion[0].metric("체크인 시작 → 완료", f"{metrics.get('checkin_completion_rate') or 0}%")
+    conversion[1].metric("추천 수락 → 습관 완료", f"{metrics.get('recommendation_completion_rate') or 0}%")
+    conversion[2].metric("다음 날 복귀율", f"{metrics.get('next_day_return_rate') or 0}%")
+
+    st.subheader(f"{period_label} 핵심 행동")
     funnel = [
         {"지표": "체크인 시작", "값": metrics.get("checkin_started_users", 0)},
         {"지표": "체크인 완료", "값": metrics.get("checkin_completed_users", 0)},
@@ -1282,7 +1295,7 @@ def admin_page() -> None:
 
     daily = metrics.get("daily", [])
     if daily:
-        st.subheader("최근 14일 활성·체크인 사용자")
+        st.subheader(f"{period_label} 활성·체크인 사용자")
         daily_rows = [
             {
                 "날짜": row.get("day", ""),
@@ -1293,7 +1306,7 @@ def admin_page() -> None:
             if isinstance(row, dict)
         ]
         st.dataframe(daily_rows, hide_index=True, use_container_width=True)
-        st.caption("Python 3.14 운영 환경과의 호환성을 위해 외부 차트 라이브러리 없이 표시합니다.")
+        st.caption("한국 시간 기준 일별 수치이며 외부 차트 라이브러리 없이 표시합니다.")
     else:
         st.info("아직 표시할 일별 이벤트가 없습니다.")
 

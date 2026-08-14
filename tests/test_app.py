@@ -12,8 +12,16 @@ class DailyPaceTest(unittest.TestCase):
     def test_admin_dashboard_avoids_altair_chart_dependency(self):
         source = APP.read_text(encoding="utf-8")
         self.assertNotIn("st.bar_chart(", source)
-        self.assertIn("최근 14일 활성·체크인 사용자", source)
+        self.assertIn("활성·체크인 사용자", source)
         self.assertIn("daily_rows", source)
+
+    def test_admin_dashboard_supports_periods_and_conversions(self):
+        source = APP.read_text(encoding="utf-8")
+        for label in ("오늘", "최근 7일", "최근 30일"):
+            self.assertIn(label, source)
+        self.assertIn("checkin_completion_rate", source)
+        self.assertIn("recommendation_completion_rate", source)
+        self.assertIn("next_day_return_rate", source)
 
     def test_initial_screen_and_checkin_flow(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)

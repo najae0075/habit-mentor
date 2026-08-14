@@ -21,6 +21,9 @@ class AnalyticsSchemaTest(unittest.TestCase):
             "next_day_returns",
             "retention_7",
             "retention_30",
+            "checkin_completion_rate",
+            "recommendation_completion_rate",
+            "next_day_return_rate",
         ):
             self.assertIn(metric, sql)
 

@@ -44,9 +44,10 @@ class DailyPaceTest(unittest.TestCase):
         app.run(timeout=15)
 
         self.assertFalse(app.exception)
-        self.assertEqual(len(app.metric), 6)
+        self.assertEqual(len(app.metric), 9)
         self.assertEqual(app.metric[0].label, "주간 성공률")
-        self.assertEqual(app.metric[3].label, "월간 완료")
+        self.assertTrue(any(metric.label == "평균 수면" for metric in app.metric))
+        self.assertTrue(any(metric.label == "월간 완료" for metric in app.metric))
         self.assertTrue(any("이전 달" in button.label for button in app.button))
         self.assertTrue(any("다음 달" in button.label for button in app.button))
 
@@ -117,6 +118,27 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(len(app.time_input), 3)
         self.assertTrue(any("알림 설정 저장" in button.label for button in app.button))
         self.assertTrue(any("재알림 30분 뒤 1회" in message.value for message in app.info))
+
+    def test_checkin_snapshot_produces_condition_insights(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["checkin_history"] = {
+            date.today().isoformat(): {
+                "condition": "나쁨",
+                "overtime": "있어요",
+                "available_minutes": 10,
+                "motivation": "낮음",
+                "sleep": 6.5,
+                "note": "",
+            }
+        }
+        app.session_state["page"] = "records"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        metrics = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(metrics["평균 수면"], "6.5시간")
+        self.assertEqual(metrics["야근"], "1일")
+        self.assertEqual(metrics["컨디션 나쁨"], "1일")
 
 
 if __name__ == "__main__":

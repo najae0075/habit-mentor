@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_application_layers_are_present():
     expected = {
-        "pages": ["admin.py", "guide.py", "router.py"],
+        "pages": ["admin.py", "daily.py", "guide.py", "router.py"],
         "services": ["supabase.py"],
         "domain": ["habits.py", "recommendations.py", "progress.py"],
         "components": ["layout.py", "sidebar.py"],

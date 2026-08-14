@@ -1,5 +1,7 @@
 # 데일리 페이스 Streamlit
 
+[![Tests](https://github.com/najae0075/habit-mentor/actions/workflows/tests.yml/badge.svg)](https://github.com/najae0075/habit-mentor/actions/workflows/tests.yml)
+
 컨디션과 일정에 맞춰 오늘 가능한 습관 목표를 추천하는 반응형 MVP입니다.
 
 ## 운영 앱
@@ -12,7 +14,7 @@
 
 ## 로컬 실행
 
-Python 3.11~3.13 환경에서 다음 명령을 실행합니다.
+Python 3.12 또는 3.14 환경에서 다음 명령을 실행합니다.
 
 ```bash
 python -m venv .venv
@@ -28,7 +30,18 @@ streamlit run app.py
 4. Python 버전은 3.12를 권장합니다.
 5. 배포 후 생성된 URL에서 모바일과 PC 흐름을 확인합니다.
 
-현재 MVP 데이터는 방문자의 Streamlit 세션 동안 유지됩니다. 실제 계정·다기기 동기화·장기 기록 운영에는 외부 데이터베이스와 인증 연동이 필요합니다. 비밀키는 `.streamlit/secrets.toml`에 두고 Git에 커밋하지 않습니다.
+Supabase 설정이 있으면 이메일 인증과 사용자별 장기 기록 동기화를 사용합니다. 설정이 없는 로컬 환경에서는 게스트 세션으로 실행됩니다. 비밀키는 `.streamlit/secrets.toml`에 두고 Git에 커밋하지 않습니다.
+
+## 자동 테스트
+
+GitHub Actions는 PR과 `main` 푸시마다 Python 3.12·3.14에서 구문 검사와 전체 테스트를 실행합니다.
+
+```bash
+python -m py_compile app.py supabase_backend.py
+python -m unittest discover -s tests -v
+```
+
+모든 테스트가 통과한 변경만 운영 브랜치에 병합합니다.
 
 ## 운영 점검
 

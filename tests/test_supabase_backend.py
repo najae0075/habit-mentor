@@ -117,6 +117,24 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(kwargs["json"]["user_id"], "user-1")
         self.assertEqual(kwargs["headers"]["Prefer"], "resolution=merge-duplicates,return=minimal")
 
+    @patch("supabase_backend.requests.request")
+    def test_tracks_event_with_deduplication_key(self, request):
+        request.return_value = Mock(ok=True)
+        self.backend.track_event(
+            "user-1",
+            "access-token",
+            "checkin_completed",
+            {"condition": "좋음"},
+            "checkin_completed:2026-08-14",
+        )
+
+        kwargs = request.call_args.kwargs
+        self.assertIn("on_conflict=user_id,event_key", request.call_args.args[1])
+        self.assertEqual(kwargs["json"]["event_name"], "checkin_completed")
+        self.assertEqual(kwargs["json"]["metadata"], {"condition": "좋음"})
+        self.assertEqual(kwargs["headers"]["Prefer"], "resolution=ignore-duplicates,return=minimal")
+        self.assertEqual(kwargs["timeout"], 3)
+
     @patch("supabase_backend.requests.request", side_effect=requests.Timeout)
     def test_network_failure_has_user_friendly_message(self, _request):
         with self.assertRaisesRegex(SupabaseError, "기록 서버에 연결할 수 없습니다"):

@@ -95,6 +95,16 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(app.metric[1].value, "2일")
         self.assertTrue(any("복귀 기회" in message.value for message in app.success))
 
+    def test_profile_page_allows_nickname_and_tone_selection(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "profile"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(any(field.label == "닉네임" for field in app.text_input))
+        self.assertTrue(any(field.label == "코칭 말투" for field in app.selectbox))
+        self.assertTrue(any("프로필 저장" in button.label for button in app.button))
+
 
 if __name__ == "__main__":
     unittest.main()

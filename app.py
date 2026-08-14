@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from hashlib import pbkdf2_hmac
 from hmac import compare_digest
+from html import escape
 from secrets import token_hex
 from uuid import uuid4
 
@@ -79,6 +80,7 @@ def initialize_state() -> None:
         "sleep": 6.0,
         "note": "",
         "tone": "따뜻한 친구",
+        "nickname": "나",
         "selected_habit": "side_project",
         "completed": set(),
         "completion_history": {},
@@ -119,6 +121,7 @@ def serializable_state() -> dict[str, object]:
         "sleep": st.session_state.sleep,
         "note": st.session_state.note,
         "tone": st.session_state.tone,
+        "nickname": st.session_state.nickname,
         "completed": sorted(st.session_state.completed),
         "completion_history": st.session_state.completion_history,
         "focus_history": st.session_state.focus_history,
@@ -155,7 +158,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "app_lock"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "app_lock"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -239,6 +242,15 @@ def valid_pin(pin: str) -> bool:
     if not lock:
         return False
     return compare_digest(pin_digest(pin, lock["salt"]), lock["digest"])
+
+
+def display_name() -> str:
+    nickname = st.session_state.nickname.strip()
+    if nickname:
+        return nickname
+    auth = st.session_state.auth or {}
+    email = auth.get("user", {}).get("email", "")
+    return email.split("@", 1)[0] if email else "나"
 
 
 def auth_screen(backend: SupabaseBackend) -> None:
@@ -413,9 +425,11 @@ def sidebar() -> None:
             go("character")
         if st.button("⚿  앱 잠금", use_container_width=True):
             go("security")
+        if st.button("⚙  프로필 설정", use_container_width=True):
+            go("profile")
         st.divider()
-        st.session_state.tone = st.selectbox("멘토 말투", list(TONE_COPY), index=list(TONE_COPY).index(st.session_state.tone))
-        st.markdown('<div class="profile"><strong>민지</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
+        st.caption(f"멘토 말투 · {st.session_state.tone}")
+        st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
         if st.session_state.auth and st.button("로그아웃", use_container_width=True):
             st.session_state.auth = None
             st.session_state.remote_loaded = False
@@ -425,11 +439,12 @@ def sidebar() -> None:
 
 def today_page() -> None:
     today = date.today()
+    name = escape(display_name())
     completed = len(set(st.session_state.completed) & set(st.session_state.focus_habits))
     st.caption(f"{today.month}월 {today.day}일 · 오늘의 페이스")
     st.markdown(
         f"""<section class="hero"><div class="eyebrow">GOOD DAY</div>
-        <h1>민지님, 오늘의 속도는<br><em>어떤가요?</em></h1>
+        <h1>{name}님, 오늘의 속도는<br><em>어떤가요?</em></h1>
         <p>완벽하지 않아도 괜찮아요.<br>지금의 나에게 맞는 한 걸음을 찾아봐요.</p>
         <div class="character"></div></section>""",
         unsafe_allow_html=True,
@@ -666,6 +681,38 @@ def character_page() -> None:
     st.info("추가 캐릭터와 특별 꾸미기 아이템은 구독 기능으로 확장할 예정이에요.")
 
 
+def profile_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">MY PROFILE</div><h1>나에게 편안한 방식으로<br><span class="accent">멘토를 맞춰보세요.</span></h1><p>닉네임과 코칭 말투는 로그인한 모든 기기에 동기화돼요.</p></div>', unsafe_allow_html=True)
+
+    with st.form("profile-settings"):
+        nickname = st.text_input("닉네임", value=st.session_state.nickname, max_chars=20)
+        selected_tone = st.selectbox(
+            "코칭 말투",
+            list(TONE_COPY),
+            index=list(TONE_COPY).index(st.session_state.tone),
+        )
+        submitted = st.form_submit_button("프로필 저장", type="primary", use_container_width=True)
+    if submitted:
+        clean_nickname = nickname.strip()
+        if not clean_nickname:
+            st.warning("사용할 닉네임을 입력해주세요.")
+        else:
+            st.session_state.nickname = clean_nickname
+            st.session_state.tone = selected_tone
+            save_remote()
+            st.success("프로필과 멘토 말투를 저장했어요.")
+            st.rerun()
+
+    title, subtitle = TONE_COPY[selected_tone]
+    st.markdown(f'<div class="recommend-card"><div class="eyebrow">말투 미리보기</div><h3>{escape(title)}</h3><p>{escape(subtitle)}</p></div>', unsafe_allow_html=True)
+    auth = st.session_state.auth or {}
+    email = auth.get("user", {}).get("email")
+    if email:
+        st.caption(f"로그인 계정 · {email}")
+
+
 def security_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -804,5 +851,7 @@ elif st.session_state.page == "character":
     character_page()
 elif st.session_state.page == "security":
     security_page()
+elif st.session_state.page == "profile":
+    profile_page()
 else:
     today_page()

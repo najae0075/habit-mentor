@@ -41,11 +41,29 @@ class SupabaseBackend:
             )
         except requests.RequestException as error:
             raise SupabaseError("인증 서버에 연결할 수 없습니다.") from error
-        data = response.json() if response.content else {}
+        data = self._safe_json(response)
         if not response.ok:
             message = data.get("msg") or data.get("message") or data.get("error_description")
-            raise SupabaseError(message or "인증 요청을 처리하지 못했습니다.")
+            raise SupabaseError(message or f"인증 요청을 처리하지 못했습니다. (HTTP {response.status_code})")
+        if not data:
+            raise SupabaseError(
+                "Supabase 인증 서버가 예상과 다른 응답을 보냈습니다. "
+                f"SUPABASE_URL과 Publishable key를 확인해주세요. (HTTP {response.status_code})"
+            )
         return data
+
+    @staticmethod
+    def _safe_json(response: requests.Response) -> dict[str, Any]:
+        if not response.content:
+            return {}
+        content_type = response.headers.get("Content-Type", "")
+        if "json" not in content_type.lower():
+            return {}
+        try:
+            data = response.json()
+        except (requests.exceptions.JSONDecodeError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def load_state(self, user_id: str, access_token: str) -> dict[str, Any] | None:
         response = self._data_request(

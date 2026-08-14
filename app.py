@@ -103,6 +103,7 @@ def initialize_state() -> None:
         "app_lock": None,
         "app_unlocked": False,
         "calendar_offset": 0,
+        "onboarding_complete": True,
         "accepted": {},
         "custom_habits": [],
         "focus_habits": [habit.key for habit in HABITS],
@@ -145,6 +146,7 @@ def serializable_state() -> dict[str, object]:
         "reminder_settings": st.session_state.reminder_settings,
         "reminder_history": st.session_state.reminder_history,
         "app_lock": st.session_state.app_lock,
+        "onboarding_complete": st.session_state.onboarding_complete,
         "accepted": st.session_state.accepted,
         "custom_habits": st.session_state.custom_habits,
         "focus_habits": st.session_state.focus_habits,
@@ -173,10 +175,14 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock", "onboarding_complete"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
+        if "onboarding_complete" not in saved:
+            st.session_state.onboarding_complete = True
+    else:
+        st.session_state.onboarding_complete = False
     today_key = date.today().isoformat()
     if st.session_state.active_date != today_key:
         st.session_state.completed = set(st.session_state.completion_history.get(today_key, []))
@@ -417,6 +423,48 @@ def auth_screen(backend: SupabaseBackend) -> None:
                 st.rerun()
             else:
                 st.success("확인 이메일을 보냈어요. 이메일 인증 후 로그인해주세요.")
+
+
+def onboarding_screen() -> None:
+    auth = st.session_state.auth or {}
+    email = auth.get("user", {}).get("email", "")
+    suggested_name = email.split("@", 1)[0] if email else ""
+    st.markdown('<div class="center-heading"><div class="eyebrow">WELCOME TO DAILY PACE</div><h1>완벽한 계획보다<br><span class="accent">나에게 맞는 시작.</span></h1><p>처음 한 번만 알려주시면 오늘부터 편안하게 함께할게요.</p></div>', unsafe_allow_html=True)
+    habit_labels = {habit.key: f"{habit.icon} {habit.title}" for habit in HABITS}
+    with st.form("onboarding"):
+        nickname = st.text_input("어떻게 불러드릴까요?", value=suggested_name, max_chars=20)
+        tone = st.selectbox("어떤 멘토와 함께할까요?", list(TONE_COPY))
+        focus = st.multiselect(
+            "먼저 집중할 핵심 습관 (최대 3개)",
+            options=list(habit_labels),
+            default=[habit.key for habit in HABITS],
+            format_func=lambda key: habit_labels[key],
+            max_selections=3,
+        )
+        reminder_enabled = st.toggle("아침 체크인 알림 받기")
+        morning_time = st.time_input("아침 체크인 시간", value=time(8, 0))
+        submitted = st.form_submit_button("설정 완료하고 시작하기", type="primary", use_container_width=True)
+    if submitted:
+        clean_name = nickname.strip()
+        if not clean_name:
+            st.warning("사용할 닉네임을 입력해주세요.")
+        elif not focus:
+            st.warning("핵심 습관을 하나 이상 선택해주세요.")
+        else:
+            st.session_state.nickname = clean_name
+            st.session_state.tone = tone
+            st.session_state.focus_habits = focus
+            st.session_state.reminder_settings = {
+                **st.session_state.reminder_settings,
+                "enabled": reminder_enabled,
+                "moment": "아침",
+                "morning_time": morning_time.strftime("%H:%M"),
+            }
+            st.session_state.onboarding_complete = True
+            record_today()
+            save_remote()
+            st.session_state.flash = f"{clean_name}님, 데일리 페이스에 오신 걸 환영해요."
+            st.rerun()
 
 
 def lock_screen() -> None:
@@ -1115,6 +1163,9 @@ if backend and not st.session_state.auth:
     auth_screen(backend)
     st.stop()
 load_remote()
+if st.session_state.auth and not st.session_state.onboarding_complete:
+    onboarding_screen()
+    st.stop()
 if st.session_state.app_lock and not st.session_state.app_unlocked:
     lock_screen()
     st.stop()

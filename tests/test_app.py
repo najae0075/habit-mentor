@@ -150,6 +150,21 @@ class DailyPaceTest(unittest.TestCase):
         self.assertTrue(any("기록 삭제" in field.label for field in app.text_input))
         self.assertTrue(any("활동 기록 초기화" in button.label for button in app.button))
 
+    def test_new_user_onboarding_collects_core_preferences(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["auth"] = {
+            "access_token": "test-token",
+            "user": {"id": "test-user", "email": "new@example.com"},
+        }
+        app.session_state["onboarding_complete"] = False
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(any("어떻게 불러드릴까요" in field.label for field in app.text_input))
+        self.assertTrue(any("어떤 멘토" in field.label for field in app.selectbox))
+        self.assertEqual(len(app.multiselect), 1)
+        self.assertTrue(any("설정 완료하고 시작하기" in button.label for button in app.button))
+
 
 if __name__ == "__main__":
     unittest.main()

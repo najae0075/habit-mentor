@@ -165,6 +165,18 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(len(app.multiselect), 1)
         self.assertTrue(any("설정 완료하고 시작하기" in button.label for button in app.button))
 
+    def test_guest_preview_shows_storage_notice_and_signup_action(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["guest_mode"] = True
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(any("브라우저 세션" in message.value for message in app.info))
+        signup = next(button for button in app.button if "가입하고 기록 저장하기" in button.label)
+        signup.click()
+        app.run(timeout=15)
+        self.assertFalse(app.session_state["guest_mode"])
+
     def test_difficult_feedback_reduces_next_recommendation(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)
         yesterday = (date.today() - timedelta(days=1)).isoformat()

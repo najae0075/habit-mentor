@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import date, timedelta
 import unittest
 
 from streamlit.testing.v1 import AppTest
@@ -79,6 +80,20 @@ class DailyPaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("분으로 줄이기" in button.label for button in app.button))
         self.assertTrue(any("오늘은 회복하기" in button.label for button in app.button))
+
+    def test_return_after_one_missed_day_preserves_streak(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        today = date.today()
+        app.session_state["completion_history"] = {
+            today.isoformat(): ["side_project"],
+            (today - timedelta(days=2)).isoformat(): ["side_project"],
+        }
+        app.session_state["page"] = "records"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(app.metric[1].value, "2일")
+        self.assertTrue(any("복귀 기회" in message.value for message in app.success))
 
 
 if __name__ == "__main__":

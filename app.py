@@ -186,12 +186,34 @@ def weekly_stats() -> tuple[int, int, int]:
         target_count += len(focus)
     success_rate = round(completed_count / target_count * 100) if target_count else 0
 
-    streak = 0
-    cursor = today
-    while st.session_state.completion_history.get(cursor.isoformat()):
-        streak += 1
-        cursor -= timedelta(days=1)
+    streak, _ = streak_details()
     return success_rate, streak, len(set(st.session_state.checkin_dates) & set(dates))
+
+
+def streak_details() -> tuple[int, str | None]:
+    cursor = date.today()
+    today_key = cursor.isoformat()
+    if not st.session_state.completion_history.get(today_key) and not st.session_state.rest_history.get(today_key):
+        cursor -= timedelta(days=1)
+
+    streak = 0
+    recovery_day = None
+    recovery_candidate = None
+    for _ in range(366):
+        day_key = cursor.isoformat()
+        completed = bool(st.session_state.completion_history.get(day_key))
+        planned_rest = bool(st.session_state.rest_history.get(day_key))
+        if completed or planned_rest:
+            streak += 1
+            if recovery_candidate:
+                recovery_day = recovery_candidate
+                recovery_candidate = None
+        elif streak and recovery_day is None and recovery_candidate is None:
+            recovery_candidate = day_key
+        else:
+            break
+        cursor -= timedelta(days=1)
+    return streak, recovery_day
 
 
 def character_stats() -> tuple[int, str, int, int]:
@@ -456,9 +478,11 @@ def today_page() -> None:
                 go("quick_adjust")
 
     success_rate, streak, _ = weekly_stats()
+    _, recovery_day = streak_details()
+    recovery_copy = "복귀 기회로 연속 기록을 지켰어요." if recovery_day else "하루를 놓쳐도 다음 날 돌아오면 기록을 지켜드려요."
     st.markdown(
         f"""<div class="week-card"><div><div class="eyebrow">THIS WEEK</div>
-        <h3>이번 주도 잘 돌아오고 있어요</h3><small>현재 연속 달성 {streak}일 · 작은 실천도 온전한 기록이에요.</small></div>
+        <h3>이번 주도 잘 돌아오고 있어요</h3><small>현재 연속 달성 {streak}일 · {recovery_copy}</small></div>
         <div><strong>{success_rate}%</strong><br><small>주간 성공률</small></div></div>""",
         unsafe_allow_html=True,
     )
@@ -576,6 +600,12 @@ def records_page() -> None:
     col1.metric("주간 성공률", f"{success_rate}%")
     col2.metric("연속 달성일", f"{streak}일")
     col3.metric("주간 체크인", f"{checkin_days}/7일")
+    _, recovery_day = streak_details()
+    if recovery_day:
+        recovered = date.fromisoformat(recovery_day)
+        st.success(f"♡ {recovered.month}/{recovered.day}의 공백은 복귀 기회로 연결했어요. 연속 기록은 안전해요.")
+    else:
+        st.caption("하루를 놓쳐도 다음 날 돌아오면 한 번의 복귀 기회로 연속 기록을 이어드려요.")
 
     st.subheader("최근 7일")
     habits = {habit.key: habit for habit in all_habits()}

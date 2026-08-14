@@ -37,3 +37,15 @@ streamlit run app.py
 - 주기적으로 모바일 체크인, 추천 4단계, 목표 수락과 완료 기록을 회귀 점검합니다.
 - 민감한 컨디션·수면 기록을 로그에 출력하지 않습니다.
 - 배포 상태는 `python tests/check_deployment.py`로 확인할 수 있습니다.
+
+## Supabase 연결
+
+1. Supabase SQL Editor에서 `supabase_schema.sql`을 실행합니다.
+2. Streamlit Cloud의 App settings → Secrets에 아래 값을 등록합니다.
+
+```toml
+SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_YOUR_KEY"
+```
+
+배포 환경에 두 값이 있으면 이메일 로그인과 사용자별 기록 동기화가 활성화됩니다. 값이 없는 로컬 환경에서는 게스트 모드로 실행됩니다. Secret 또는 service role 키는 사용하지 않습니다.

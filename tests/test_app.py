@@ -70,6 +70,16 @@ class DailyPaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("잠금 해제" in button.label for button in app.button))
 
+    def test_quick_adjust_offers_reduced_goal_and_rest(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "quick_adjust"
+        app.session_state["selected_habit"] = "side_project"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(any("분으로 줄이기" in button.label for button in app.button))
+        self.assertTrue(any("오늘은 회복하기" in button.label for button in app.button))
+
 
 if __name__ == "__main__":
     unittest.main()

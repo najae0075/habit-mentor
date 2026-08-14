@@ -40,9 +40,16 @@ def admin_page(go, is_admin, get_backend, supabase_error) -> None:
 
     metrics = st.session_state.admin_metrics or {}
     if metrics.get("_legacy_rpc"):
-        st.warning(
-            "Supabase의 이전 집계 함수를 사용 중이에요. 페이지는 계속 사용할 수 있지만 기간별 지표와 전환율을 적용하려면 최신 supabase_schema.sql을 실행해주세요."
+        st.error(
+            "운영 지표 데이터베이스 업데이트가 필요합니다. 아래 마이그레이션을 적용하기 전에는 기간별 수치를 정확하게 표시할 수 없어요."
         )
+        st.code(
+            "Supabase Dashboard → SQL Editor → "
+            "supabase_migrations/20260815_upgrade_admin_analytics.sql 전체 실행",
+            language=None,
+        )
+        st.caption("실행 후 이 화면에서 ‘지표 새로고침’을 누르면 최신 기간별 지표가 표시됩니다.")
+        return
     top = st.columns(4)
     top[0].metric("가입 사용자", f"{metrics.get('registered_users', 0):,}명")
     top[1].metric(f"{period_label} 활성 사용자", f"{metrics.get('active_users', 0):,}명")

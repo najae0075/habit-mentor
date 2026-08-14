@@ -92,6 +92,7 @@ def initialize_state() -> None:
         "active_date": date.today().isoformat(),
         "adjustment_history": {},
         "rest_history": {},
+        "feedback_history": {},
         "reminder_settings": {
             "enabled": False,
             "moment": "아침",
@@ -143,6 +144,7 @@ def serializable_state() -> dict[str, object]:
         "active_date": st.session_state.active_date,
         "adjustment_history": st.session_state.adjustment_history,
         "rest_history": st.session_state.rest_history,
+        "feedback_history": st.session_state.feedback_history,
         "reminder_settings": st.session_state.reminder_settings,
         "reminder_history": st.session_state.reminder_history,
         "app_lock": st.session_state.app_lock,
@@ -175,7 +177,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock", "onboarding_complete"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "feedback_history", "reminder_settings", "reminder_history", "app_lock", "onboarding_complete"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -314,6 +316,7 @@ def exportable_data() -> dict[str, object]:
             "checkin_history": st.session_state.checkin_history,
             "adjustment_history": st.session_state.adjustment_history,
             "rest_history": st.session_state.rest_history,
+            "feedback_history": st.session_state.feedback_history,
         },
         "reminder_settings": st.session_state.reminder_settings,
     }
@@ -327,6 +330,7 @@ def clear_activity_data() -> None:
     st.session_state.checkin_history = {}
     st.session_state.adjustment_history = {}
     st.session_state.rest_history = {}
+    st.session_state.feedback_history = {}
     st.session_state.reminder_history = {}
     st.session_state.active_date = date.today().isoformat()
 
@@ -485,6 +489,14 @@ def go(page: str) -> None:
     st.rerun()
 
 
+def latest_habit_feedback(habit_key: str) -> str | None:
+    for day in sorted(st.session_state.feedback_history, reverse=True):
+        feedback = st.session_state.feedback_history.get(day, {}).get(habit_key)
+        if feedback:
+            return feedback
+    return None
+
+
 def recommend(habit: Habit) -> dict[str, object]:
     condition = st.session_state.condition
     overtime = st.session_state.overtime == "있어요"
@@ -500,7 +512,10 @@ def recommend(habit: Habit) -> dict[str, object]:
             "reason": "수면과 컨디션을 고려해 오늘은 회복을 우선해요.",
         }
 
+    recent_feedback = latest_habit_feedback(habit.key)
     constraints = sum((condition == "나쁨", overtime, motivation == "낮음"))
+    if recent_feedback == "버거웠어요":
+        constraints += 1
     if constraints >= 2:
         amount = min(habit.minimum_minutes, available)
         return {
@@ -515,7 +530,7 @@ def recommend(habit: Habit) -> dict[str, object]:
             "level": "축소",
             "minutes": amount,
             "title": f"{amount}분만 집중하기",
-            "reason": "오늘 쓸 수 있는 시간 안에서 무리 없도록 조정했어요.",
+            "reason": "최근 난이도 피드백과 오늘 쓸 수 있는 시간을 반영해 무리 없도록 조정했어요." if recent_feedback else "오늘 쓸 수 있는 시간 안에서 무리 없도록 조정했어요.",
         }
     return {
         "level": "기본",
@@ -678,6 +693,20 @@ def today_page() -> None:
                 record_today()
                 save_remote()
                 st.rerun()
+            if done:
+                existing_feedback = st.session_state.feedback_history.get(today_key, {}).get(habit.key)
+                options = ["쉬웠어요", "적당했어요", "버거웠어요"]
+                feedback = st.radio(
+                    "오늘 목표 난이도",
+                    options,
+                    index=options.index(existing_feedback) if existing_feedback in options else None,
+                    horizontal=True,
+                    key=f"feedback-{today_key}-{habit.key}",
+                )
+                if feedback and feedback != existing_feedback:
+                    st.session_state.feedback_history.setdefault(today_key, {})[habit.key] = feedback
+                    save_remote()
+                    st.toast("다음 목표 추천에 반영할게요.", icon="♡")
             if st.button("목표 조정", key=f"adjust-{habit.key}", use_container_width=True):
                 st.session_state.selected_habit = habit.key
                 go("recommendation")

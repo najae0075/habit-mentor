@@ -32,11 +32,12 @@ def test_app_is_an_orchestrator_for_extracted_layers():
     assert "@media" not in app
 
 
-def test_toasts_do_not_depend_on_runtime_emoji_validation():
+def test_app_avoids_runtime_sensitive_toasts():
     python_files = [ROOT / "app.py", *(ROOT / "pages").glob("*.py")]
     for path in python_files:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
             function = call.func
-            if isinstance(function, ast.Attribute) and function.attr == "toast":
-                assert all(keyword.arg != "icon" for keyword in call.keywords), path
+            assert not (
+                isinstance(function, ast.Attribute) and function.attr == "toast"
+            ), path

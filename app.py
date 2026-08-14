@@ -170,7 +170,7 @@ def save_remote() -> None:
     try:
         backend.save_state(auth["user"]["id"], auth["access_token"], serializable_state())
     except SupabaseError as error:
-        st.toast(str(error))
+        st.warning(str(error))
 
 
 def track_event(
@@ -960,7 +960,7 @@ if st.session_state.app_lock and not st.session_state.app_unlocked:
 render_sidebar(go, is_admin, display_name)
 render_due_reminder()
 if st.session_state.flash:
-    st.toast(st.session_state.flash)
+    st.success(st.session_state.flash)
     st.session_state.flash = ""
 
 daily_page_dependencies = {

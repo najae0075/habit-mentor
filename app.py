@@ -183,6 +183,20 @@ def weekly_stats() -> tuple[int, int, int]:
     return success_rate, streak, len(set(st.session_state.checkin_dates) & set(dates))
 
 
+def character_stats() -> tuple[int, str, int, int]:
+    points = sum(len(set(items)) for items in st.session_state.completion_history.values())
+    stages = [(0, "새싹 모리"), (5, "한 뼘 모리"), (15, "튼튼 모리"), (30, "빛나는 모리")]
+    level = 1
+    name = stages[0][1]
+    next_goal = stages[1][0]
+    for index, (threshold, stage_name) in enumerate(stages):
+        if points >= threshold:
+            level = index + 1
+            name = stage_name
+            next_goal = stages[index + 1][0] if index + 1 < len(stages) else threshold
+    return points, name, level, next_goal
+
+
 def auth_screen(backend: SupabaseBackend) -> None:
     st.markdown('<div class="center-heading"><div class="eyebrow">WELCOME</div><h1>나의 속도를<br><span class="accent">안전하게 기록해요.</span></h1><p>로그인하면 다른 기기에서도 습관 기록을 이어갈 수 있어요.</p></div>', unsafe_allow_html=True)
     _, center, _ = st.columns([1, 1.3, 1])
@@ -306,6 +320,10 @@ def inject_styles() -> None:
         .recommend-title h2 { margin:.2rem 0; }
         .reason { background:#eff0e9; color:#65746c; border-radius:13px; padding:1rem; font-size:.82rem; }
         .recovery { text-align:center; color:var(--muted); font-size:.78rem; margin:1.2rem; }
+        .character-stage { display:grid; place-items:center; min-height:260px; margin:1rem 0 2rem; border-radius:24px; background:#e6e4da; }
+        .character-avatar { display:grid; place-items:center; width:150px; height:170px; border-radius:48% 52% 42% 45%; background:#91ad99; color:#31483e; font-size:2rem; box-shadow:0 15px 25px #385d4e22; }
+        .badge-card { min-height:125px; padding:1.1rem; border:1px solid var(--line); border-radius:16px; background:#fbfaf6; }
+        .badge-card.locked { opacity:.45; filter:grayscale(1); }
         div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:2.8rem; }
         div.stButton > button[kind="primary"] { background:var(--dark); border-color:var(--dark); }
         [data-testid="stMetricValue"] { color:var(--coral); }
@@ -335,7 +353,7 @@ def sidebar() -> None:
         if st.button("◇  습관", use_container_width=True):
             go("habits")
         if st.button("☆  캐릭터", use_container_width=True):
-            st.toast("모리가 한 걸음씩 자라고 있어요.")
+            go("character")
         st.divider()
         st.session_state.tone = st.selectbox("멘토 말투", list(TONE_COPY), index=list(TONE_COPY).index(st.session_state.tone))
         st.markdown('<div class="profile"><strong>민지</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
@@ -496,6 +514,40 @@ def records_page() -> None:
         st.success("꾸준한 흐름이 보여요. 지금의 현실적인 속도를 유지해보세요.")
 
 
+def character_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    points, stage_name, level, next_goal = character_stats()
+    st.markdown(f'<div class="center-heading"><div class="eyebrow">MY COMPANION</div><h1>작은 실천을 먹고 자라는<br><span class="accent">{stage_name}</span></h1><p>습관 하나를 완료할 때마다 모리가 성장 포인트를 하나씩 얻어요.</p></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="character-stage"><div class="character-avatar">• ᴗ •</div></div>', unsafe_allow_html=True)
+
+    left, right = st.columns(2)
+    left.metric("모리의 단계", f"Lv.{level}")
+    right.metric("성장 포인트", f"{points}점")
+    if level < 4:
+        st.progress(min(points / next_goal, 1.0), text=f"다음 성장까지 {max(next_goal - points, 0)}점")
+    else:
+        st.progress(1.0, text="모리가 가장 빛나는 단계에 도달했어요")
+
+    st.subheader("성장 배지")
+    badges = [
+        (1, "첫걸음", "첫 습관 완료"),
+        (5, "다시 돌아옴", "누적 5회 완료"),
+        (15, "꾸준한 동행", "누적 15회 완료"),
+    ]
+    columns = st.columns(3)
+    for column, (threshold, title, description) in zip(columns, badges):
+        unlocked = points >= threshold
+        state_class = "" if unlocked else " locked"
+        symbol = "★" if unlocked else "☆"
+        column.markdown(
+            f'<div class="badge-card{state_class}"><strong>{symbol} {title}</strong><p>{description}</p><small>{"획득했어요" if unlocked else f"{threshold - points}회 남았어요"}</small></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.info("추가 캐릭터와 특별 꾸미기 아이템은 구독 기능으로 확장할 예정이에요.")
+
+
 def habits_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -582,5 +634,7 @@ elif st.session_state.page == "habits":
     habits_page()
 elif st.session_state.page == "records":
     records_page()
+elif st.session_state.page == "character":
+    character_page()
 else:
     today_page()

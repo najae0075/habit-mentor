@@ -142,11 +142,16 @@ class SupabaseBackendTest(unittest.TestCase):
             json=lambda: {"registered_users": 12, "checkin_rate": 75.0},
         )
 
-        metrics = self.backend.load_admin_metrics("admin-token")
+        metrics = self.backend.load_admin_metrics("admin-token", 30)
 
         self.assertEqual(metrics["registered_users"], 12)
         self.assertIn("/rest/v1/rpc/admin_analytics_dashboard", request.call_args.args[1])
         self.assertEqual(request.call_args.kwargs["headers"]["Authorization"], "Bearer admin-token")
+        self.assertEqual(request.call_args.kwargs["json"], {"p_days": 30})
+
+    def test_rejects_invalid_admin_metrics_period(self):
+        with self.assertRaisesRegex(ValueError, "1일, 7일 또는 30일"):
+            self.backend.load_admin_metrics("admin-token", 14)
 
     @patch("supabase_backend.requests.request", side_effect=requests.Timeout)
     def test_network_failure_has_user_friendly_message(self, _request):

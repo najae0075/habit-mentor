@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 
@@ -36,9 +36,17 @@ class SupabaseBackend:
             {"email": email, "password": password},
         )
 
-    def sign_up(self, email: str, password: str) -> dict[str, Any]:
+    def sign_up(
+        self,
+        email: str,
+        password: str,
+        redirect_to: str | None = None,
+    ) -> dict[str, Any]:
+        path = "/auth/v1/signup"
+        if redirect_to:
+            path = f"{path}?redirect_to={quote(redirect_to, safe='')}"
         return self._auth_request(
-            "/auth/v1/signup",
+            path,
             {"email": email, "password": password},
         )
 

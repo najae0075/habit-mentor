@@ -50,6 +50,23 @@ class SupabaseBackendTest(unittest.TestCase):
             self.backend.sign_in("user@example.com", "wrong-password")
 
     @patch("supabase_backend.requests.post")
+    def test_sign_up_includes_production_redirect(self, post):
+        post.return_value = Mock(
+            ok=True,
+            content=b"{}",
+            headers={"Content-Type": "application/json"},
+            status_code=200,
+            json=lambda: {"user": {"id": "user-1"}},
+        )
+        self.backend.sign_up(
+            "user@example.com",
+            "password123",
+            redirect_to="https://habit-mentor-najae0075.streamlit.app/",
+        )
+        requested_url = post.call_args.args[0]
+        self.assertIn("redirect_to=https%3A%2F%2Fhabit-mentor-najae0075.streamlit.app%2F", requested_url)
+
+    @patch("supabase_backend.requests.post")
     def test_non_json_auth_response_does_not_crash(self, post):
         post.return_value = Mock(
             ok=False,

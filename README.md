@@ -49,3 +49,12 @@ SUPABASE_ANON_KEY = "sb_publishable_YOUR_KEY"
 ```
 
 배포 환경에 두 값이 있으면 이메일 로그인과 사용자별 기록 동기화가 활성화됩니다. 값이 없는 로컬 환경에서는 게스트 모드로 실행됩니다. Secret 또는 service role 키는 사용하지 않습니다.
+
+Supabase Authentication → URL Configuration에서 다음 값을 설정해야 합니다.
+
+```text
+Site URL: https://habit-mentor-najae0075.streamlit.app/
+Redirect URLs: https://habit-mentor-najae0075.streamlit.app/**
+```
+
+회원가입 요청에도 같은 운영 URL을 `redirect_to`로 전달합니다. URL 설정을 바꾼 뒤에는 기존 확인 메일이 아니라 새로 발급한 확인 메일을 사용해야 합니다.

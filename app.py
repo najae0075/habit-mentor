@@ -40,6 +40,8 @@ TONE_COPY = {
     "유머 있는 동료": ("야근이 등장했다! 목표가 작아졌다!", "2분도 엄연한 전진이에요."),
 }
 
+PUBLIC_APP_URL = "https://habit-mentor-najae0075.streamlit.app/"
+
 
 def initialize_state() -> None:
     defaults = {
@@ -127,7 +129,11 @@ def auth_screen(backend: SupabaseBackend) -> None:
                 st.warning("올바른 이메일과 8자 이상의 비밀번호를 입력해주세요.")
                 return
             try:
-                result = backend.sign_in(email, password) if mode == "로그인" else backend.sign_up(email, password)
+                result = (
+                    backend.sign_in(email, password)
+                    if mode == "로그인"
+                    else backend.sign_up(email, password, redirect_to=PUBLIC_APP_URL)
+                )
             except SupabaseError as error:
                 st.error(str(error))
                 return

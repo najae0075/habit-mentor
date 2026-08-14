@@ -5,6 +5,8 @@ from datetime import date
 
 import streamlit as st
 
+from supabase_backend import SupabaseBackend, SupabaseError
+
 
 st.set_page_config(
     page_title="데일리 페이스",
@@ -53,10 +55,88 @@ def initialize_state() -> None:
         "completed": set(),
         "accepted": {},
         "flash": "",
+        "auth": None,
+        "remote_loaded": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def get_backend() -> SupabaseBackend | None:
+    try:
+        url = st.secrets.get("SUPABASE_URL", "")
+        key = st.secrets.get("SUPABASE_ANON_KEY", "")
+    except FileNotFoundError:
+        return None
+    return SupabaseBackend(url, key) if url and key else None
+
+
+def serializable_state() -> dict[str, object]:
+    return {
+        "condition": st.session_state.condition,
+        "overtime": st.session_state.overtime,
+        "available_minutes": st.session_state.available_minutes,
+        "motivation": st.session_state.motivation,
+        "sleep": st.session_state.sleep,
+        "note": st.session_state.note,
+        "tone": st.session_state.tone,
+        "completed": sorted(st.session_state.completed),
+        "accepted": st.session_state.accepted,
+    }
+
+
+def save_remote() -> None:
+    backend = get_backend()
+    auth = st.session_state.auth
+    if not backend or not auth:
+        return
+    try:
+        backend.save_state(auth["user"]["id"], auth["access_token"], serializable_state())
+    except SupabaseError as error:
+        st.toast(str(error), icon="⚠️")
+
+
+def load_remote() -> None:
+    backend = get_backend()
+    auth = st.session_state.auth
+    if not backend or not auth or st.session_state.remote_loaded:
+        return
+    try:
+        saved = backend.load_state(auth["user"]["id"], auth["access_token"])
+    except SupabaseError as error:
+        st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
+        return
+    if saved:
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "accepted"):
+            if key in saved:
+                st.session_state[key] = saved[key]
+        st.session_state.completed = set(saved.get("completed", []))
+    st.session_state.remote_loaded = True
+
+
+def auth_screen(backend: SupabaseBackend) -> None:
+    st.markdown('<div class="center-heading"><div class="eyebrow">WELCOME</div><h1>나의 속도를<br><span class="accent">안전하게 기록해요.</span></h1><p>로그인하면 다른 기기에서도 습관 기록을 이어갈 수 있어요.</p></div>', unsafe_allow_html=True)
+    _, center, _ = st.columns([1, 1.3, 1])
+    with center:
+        mode = st.segmented_control("인증 방식", ["로그인", "회원가입"], default="로그인")
+        email = st.text_input("이메일", placeholder="name@example.com")
+        password = st.text_input("비밀번호", type="password", help="8자 이상 입력해주세요.")
+        if st.button(mode, type="primary", use_container_width=True):
+            if "@" not in email or len(password) < 8:
+                st.warning("올바른 이메일과 8자 이상의 비밀번호를 입력해주세요.")
+                return
+            try:
+                result = backend.sign_in(email, password) if mode == "로그인" else backend.sign_up(email, password)
+            except SupabaseError as error:
+                st.error(str(error))
+                return
+            if result.get("access_token"):
+                st.session_state.auth = result
+                st.session_state.remote_loaded = False
+                st.rerun()
+            else:
+                st.success("확인 이메일을 보냈어요. 이메일 인증 후 로그인해주세요.")
 
 
 def go(page: str) -> None:
@@ -180,6 +260,10 @@ def sidebar() -> None:
         st.divider()
         st.session_state.tone = st.selectbox("멘토 말투", list(TONE_COPY), index=list(TONE_COPY).index(st.session_state.tone))
         st.markdown('<div class="profile"><strong>민지</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
+        if st.session_state.auth and st.button("로그아웃", use_container_width=True):
+            st.session_state.auth = None
+            st.session_state.remote_loaded = False
+            st.rerun()
 
 
 def today_page() -> None:
@@ -213,6 +297,7 @@ def today_page() -> None:
                     st.session_state.completed.remove(habit.key)
                 else:
                     st.session_state.completed.add(habit.key)
+                save_remote()
                 st.rerun()
             if st.button("목표 조정", key=f"adjust-{habit.key}", use_container_width=True):
                 st.session_state.selected_habit = habit.key
@@ -247,6 +332,7 @@ def checkin_page() -> None:
         st.markdown("</div>", unsafe_allow_html=True)
         if st.button("나에게 맞는 목표 보기  →", type="primary", use_container_width=True):
             st.session_state.selected_habit = HABITS[0].key
+            save_remote()
             go("recommendation")
 
 
@@ -272,12 +358,18 @@ def recommendation_page() -> None:
         if st.button("이 목표로 할게요  →", type="primary", use_container_width=True):
             st.session_state.accepted[habit.key] = custom
             st.session_state.flash = f"{habit.title} 목표를 오늘 계획에 담았어요."
+            save_remote()
             go("today")
     st.markdown('<div class="recovery">♡ 하루 쉬어도 기록은 사라지지 않아요. 내일 돌아오면 연속 기록을 이어드릴게요.</div>', unsafe_allow_html=True)
 
 
 initialize_state()
 inject_styles()
+backend = get_backend()
+if backend and not st.session_state.auth:
+    auth_screen(backend)
+    st.stop()
+load_remote()
 sidebar()
 if st.session_state.flash:
     st.toast(st.session_state.flash, icon="🌿")
@@ -289,4 +381,3 @@ elif st.session_state.page == "recommendation":
     recommendation_page()
 else:
     today_page()
-

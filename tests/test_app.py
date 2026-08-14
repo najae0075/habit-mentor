@@ -45,6 +45,36 @@ class DailyPaceTest(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("나에게 맞는 목표 보기" in button.label for button in app.button))
 
+    def test_core_journey_from_checkin_to_habit_completion(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+
+        next(button for button in app.button if "오늘 체크인 시작" in button.label).click()
+        app.run(timeout=15)
+        # Streamlit 1.48 AppTest models segmented controls as a list-backed
+        # button group even when the application uses single selection.
+        for control in app.button_group:
+            control.set_value([control.value])
+        next(button for button in app.button if "나에게 맞는 목표 보기" in button.label).click()
+        app.run(timeout=15)
+
+        today_key = date.today().isoformat()
+        self.assertEqual(app.session_state["page"], "recommendation")
+        self.assertIn(today_key, app.session_state["checkin_dates"])
+        self.assertIn(today_key, app.session_state["checkin_history"])
+
+        selected_habit = app.session_state["selected_habit"]
+        next(button for button in app.button if "이 목표로 할게요" in button.label).click()
+        app.run(timeout=15)
+
+        self.assertEqual(app.session_state["page"], "today")
+        self.assertIn(selected_habit, app.session_state["accepted"])
+        next(button for button in app.button if button.key == f"done-{selected_habit}").click()
+        app.run(timeout=15)
+
+        self.assertIn(selected_habit, app.session_state["completed"])
+        self.assertIn(selected_habit, app.session_state["completion_history"][today_key])
+        self.assertTrue(any(button.label == "완료 취소" for button in app.button))
+
     def test_recommendation_rule(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)
         app.session_state["page"] = "recommendation"

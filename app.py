@@ -1283,7 +1283,17 @@ def admin_page() -> None:
     daily = metrics.get("daily", [])
     if daily:
         st.subheader("최근 14일 활성·체크인 사용자")
-        st.bar_chart(daily, x="day", y=["active_users", "checked_in_users"])
+        daily_rows = [
+            {
+                "날짜": row.get("day", ""),
+                "활성 사용자": row.get("active_users", 0),
+                "체크인 사용자": row.get("checked_in_users", 0),
+            }
+            for row in daily
+            if isinstance(row, dict)
+        ]
+        st.dataframe(daily_rows, hide_index=True, use_container_width=True)
+        st.caption("Python 3.14 운영 환경과의 호환성을 위해 외부 차트 라이브러리 없이 표시합니다.")
     else:
         st.info("아직 표시할 일별 이벤트가 없습니다.")
 

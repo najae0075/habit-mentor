@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from supabase_backend import SupabaseBackend, SupabaseError
+from services.supabase import SupabaseBackend, SupabaseError
 
 
 class SupabaseBackendTest(unittest.TestCase):
@@ -24,7 +24,7 @@ class SupabaseBackendTest(unittest.TestCase):
         )
         self.assertEqual(backend.url, "https://example.supabase.co")
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_sign_in_returns_session(self, post):
         post.return_value = Mock(
             ok=True,
@@ -37,7 +37,7 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(result["access_token"], "token")
         self.assertIn("grant_type=password", post.call_args.args[0])
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_sign_in_exposes_safe_error(self, post):
         post.return_value = Mock(
             ok=False,
@@ -49,7 +49,7 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(SupabaseError, "Invalid login credentials"):
             self.backend.sign_in("user@example.com", "wrong-password")
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_sign_up_includes_production_redirect(self, post):
         post.return_value = Mock(
             ok=True,
@@ -66,7 +66,7 @@ class SupabaseBackendTest(unittest.TestCase):
         requested_url = post.call_args.args[0]
         self.assertIn("redirect_to=https%3A%2F%2Fhabit-mentor-najae0075.streamlit.app%2F", requested_url)
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_non_json_auth_response_does_not_crash(self, post):
         post.return_value = Mock(
             ok=False,
@@ -77,7 +77,7 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(SupabaseError, "HTTP 502"):
             self.backend.sign_up("user@example.com", "password123")
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_empty_success_response_has_configuration_hint(self, post):
         post.return_value = Mock(
             ok=True,
@@ -88,7 +88,7 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(SupabaseError, "SUPABASE_URL"):
             self.backend.sign_up("user@example.com", "password123")
 
-    @patch("supabase_backend.requests.post")
+    @patch("services.supabase.requests.post")
     def test_not_found_response_explains_project_url_format(self, post):
         post.return_value = Mock(
             ok=False,
@@ -99,7 +99,7 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(SupabaseError, "프로젝트참조.supabase.co"):
             self.backend.sign_up("user@example.com", "password123")
 
-    @patch("supabase_backend.requests.request")
+    @patch("services.supabase.requests.request")
     def test_loads_user_state_with_bearer_token(self, request):
         request.return_value = Mock(
             ok=True,
@@ -109,7 +109,7 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(state, {"completed": ["reading"]})
         self.assertEqual(request.call_args.kwargs["headers"]["Authorization"], "Bearer access-token")
 
-    @patch("supabase_backend.requests.request")
+    @patch("services.supabase.requests.request")
     def test_saves_state_with_upsert(self, request):
         request.return_value = Mock(ok=True)
         self.backend.save_state("user-1", "access-token", {"tone": "따뜻한 친구"})
@@ -117,7 +117,7 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(kwargs["json"]["user_id"], "user-1")
         self.assertEqual(kwargs["headers"]["Prefer"], "resolution=merge-duplicates,return=minimal")
 
-    @patch("supabase_backend.requests.request")
+    @patch("services.supabase.requests.request")
     def test_tracks_event_with_deduplication_key(self, request):
         request.return_value = Mock(ok=True)
         self.backend.track_event(
@@ -135,7 +135,7 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(kwargs["headers"]["Prefer"], "resolution=ignore-duplicates,return=minimal")
         self.assertEqual(kwargs["timeout"], 3)
 
-    @patch("supabase_backend.requests.request")
+    @patch("services.supabase.requests.request")
     def test_loads_aggregated_admin_metrics_from_secure_rpc(self, request):
         request.return_value = Mock(
             ok=True,
@@ -153,7 +153,7 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "1일, 7일 또는 30일"):
             self.backend.load_admin_metrics("admin-token", 14)
 
-    @patch("supabase_backend.requests.request")
+    @patch("services.supabase.requests.request")
     def test_falls_back_to_legacy_admin_rpc_when_schema_cache_is_stale(self, request):
         request.side_effect = [
             Mock(
@@ -172,7 +172,7 @@ class SupabaseBackendTest(unittest.TestCase):
         self.assertEqual(request.call_count, 2)
         self.assertEqual(request.call_args.kwargs["json"], {})
 
-    @patch("supabase_backend.requests.request", side_effect=requests.Timeout)
+    @patch("services.supabase.requests.request", side_effect=requests.Timeout)
     def test_network_failure_has_user_friendly_message(self, _request):
         with self.assertRaisesRegex(SupabaseError, "기록 서버에 연결할 수 없습니다"):
             self.backend.load_state("user-1", "access-token")

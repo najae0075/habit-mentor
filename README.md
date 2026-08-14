@@ -22,6 +22,17 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## 코드 구조
+
+- `app.py`: 앱 초기화, 세션 조율, 화면 라우팅
+- `pages/`: 사용 가이드·운영 지표 등 화면 렌더러와 라우터
+- `services/`: Supabase 인증·저장·운영 지표 API
+- `domain/`: 습관 모델, 목표 추천, 통계·연속 기록 규칙
+- `components/`: 공통 레이아웃과 사이드바 UI
+- `styles/`: PC·태블릿·모바일 반응형 CSS
+
+기존 `supabase_backend.py`는 이전 배포 및 외부 import 호환을 위한 얇은 재노출 모듈로 유지합니다.
+
 ## Streamlit Community Cloud 배포
 
 1. 이 폴더를 GitHub 저장소에 푸시합니다.

@@ -6,26 +6,29 @@ from streamlit.testing.v1 import AppTest
 
 
 APP = Path(__file__).parents[1] / "app.py"
+STYLES = Path(__file__).parents[1] / "styles" / "app.css"
+ADMIN_PAGE = Path(__file__).parents[1] / "pages" / "admin.py"
 
 
 class DailyPaceTest(unittest.TestCase):
     def test_responsive_layout_covers_tablet_mobile_and_touch_targets(self):
         source = APP.read_text(encoding="utf-8")
+        styles = STYLES.read_text(encoding="utf-8")
         self.assertIn('initial_sidebar_state="auto"', source)
-        self.assertIn("(min-width:701px) and (max-width:1024px)", source)
-        self.assertIn("@media (max-width:700px)", source)
-        self.assertIn("flex-direction:column", source)
-        self.assertIn("min-height:46px", source)
-        self.assertIn('[data-testid="stDataFrame"]', source)
+        self.assertIn("(min-width:701px) and (max-width:1024px)", styles)
+        self.assertIn("@media (max-width:700px)", styles)
+        self.assertIn("flex-direction:column", styles)
+        self.assertIn("min-height:46px", styles)
+        self.assertIn('[data-testid="stDataFrame"]', styles)
 
     def test_admin_dashboard_avoids_altair_chart_dependency(self):
-        source = APP.read_text(encoding="utf-8")
+        source = ADMIN_PAGE.read_text(encoding="utf-8")
         self.assertNotIn("st.bar_chart(", source)
         self.assertIn("활성·체크인 사용자", source)
         self.assertIn("daily_rows", source)
 
     def test_admin_dashboard_supports_periods_and_conversions(self):
-        source = APP.read_text(encoding="utf-8")
+        source = ADMIN_PAGE.read_text(encoding="utf-8")
         for label in ("오늘", "최근 7일", "최근 30일"):
             self.assertIn(label, source)
         self.assertIn("checkin_completion_rate", source)

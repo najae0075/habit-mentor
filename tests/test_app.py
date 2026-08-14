@@ -177,6 +177,23 @@ class DailyPaceTest(unittest.TestCase):
         app.run(timeout=15)
         self.assertFalse(app.session_state["guest_mode"])
 
+    def test_public_guide_explains_features_and_starts_preview(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["show_guide"] = True
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        markdown = " ".join(item.value for item in app.markdown)
+        self.assertIn("오늘 상태 체크인", markdown)
+        self.assertIn("유연한 목표 추천", markdown)
+        self.assertIn("기록과 복귀 기회", markdown)
+        self.assertIn("내 기록과 보안", markdown)
+        preview = next(button for button in app.button if "체험 시작" in button.label)
+        preview.click()
+        app.run(timeout=15)
+        self.assertTrue(app.session_state["guest_mode"])
+        self.assertFalse(app.session_state["show_guide"])
+
     def test_difficult_feedback_reduces_next_recommendation(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)
         yesterday = (date.today() - timedelta(days=1)).isoformat()

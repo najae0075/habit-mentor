@@ -70,7 +70,7 @@ def today_page(*, display_name, focused_habits, weekly_stats, streak_details, re
                 if feedback and feedback != existing_feedback:
                     st.session_state.feedback_history.setdefault(today_key, {})[habit.key] = feedback
                     save_remote()
-                    st.toast("다음 목표 추천에 반영할게요.", icon="💚")
+                    st.toast("다음 목표 추천에 반영할게요.")
             if st.button("목표 조정", key=f"adjust-{habit.key}", use_container_width=True):
                 st.session_state.selected_habit = habit.key
                 go("recommendation")

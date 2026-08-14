@@ -1265,6 +1265,10 @@ def admin_page() -> None:
             return
 
     metrics = st.session_state.admin_metrics or {}
+    if metrics.get("_legacy_rpc"):
+        st.warning(
+            "Supabase의 이전 집계 함수를 사용 중이에요. 페이지는 계속 사용할 수 있지만 기간별 지표와 전환율을 적용하려면 최신 supabase_schema.sql을 실행해주세요."
+        )
     top = st.columns(4)
     top[0].metric("가입 사용자", f"{metrics.get('registered_users', 0):,}명")
     top[1].metric(f"{period_label} 활성 사용자", f"{metrics.get('active_users', 0):,}명")

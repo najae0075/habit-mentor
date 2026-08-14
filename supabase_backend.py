@@ -139,15 +139,30 @@ class SupabaseBackend:
     def load_admin_metrics(self, access_token: str, days: int = 7) -> dict[str, Any]:
         if days not in {1, 7, 30}:
             raise ValueError("운영 지표 기간은 1일, 7일 또는 30일이어야 합니다.")
-        response = self._data_request(
-            "POST",
-            "/rest/v1/rpc/admin_analytics_dashboard",
-            access_token,
-            payload={"p_days": days},
-        )
+        try:
+            response = self._data_request(
+                "POST",
+                "/rest/v1/rpc/admin_analytics_dashboard",
+                access_token,
+                payload={"p_days": days},
+            )
+            legacy_rpc = False
+        except SupabaseError as error:
+            message = str(error).lower()
+            if "admin_analytics_dashboard(p_days)" not in message and "schema cache" not in message:
+                raise
+            response = self._data_request(
+                "POST",
+                "/rest/v1/rpc/admin_analytics_dashboard",
+                access_token,
+                payload={},
+            )
+            legacy_rpc = True
         data = response.json()
         if not isinstance(data, dict):
             raise SupabaseError("운영 지표 응답 형식이 올바르지 않습니다.")
+        if legacy_rpc:
+            data["_legacy_rpc"] = True
         return data
 
     def _data_request(

@@ -111,6 +111,7 @@ def initialize_state() -> None:
         "focus_habits": [habit.key for habit in HABITS],
         "flash": "",
         "auth": None,
+        "guest_mode": False,
         "remote_loaded": False,
     }
     for key, value in defaults.items():
@@ -456,10 +457,20 @@ def auth_screen(backend: SupabaseBackend) -> None:
                 return
             if result.get("access_token"):
                 st.session_state.auth = result
+                st.session_state.guest_mode = False
                 st.session_state.remote_loaded = False
                 st.rerun()
             else:
                 st.success("확인 이메일을 보냈어요. 이메일 인증 후 로그인해주세요.")
+
+        st.divider()
+        st.caption("가입 전에 체크인과 맞춤 목표 추천 흐름을 먼저 경험해보세요.")
+        if st.button("회원가입 없이 체험하기", use_container_width=True):
+            st.session_state.guest_mode = True
+            st.session_state.nickname = "체험 사용자"
+            st.session_state.page = "today"
+            st.session_state.onboarding_complete = True
+            st.rerun()
 
 
 def onboarding_screen() -> None:
@@ -676,6 +687,12 @@ def sidebar() -> None:
         st.divider()
         st.caption(f"멘토 말투 · {st.session_state.tone}")
         st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
+        if st.session_state.guest_mode:
+            st.info("체험 모드예요. 현재 기록은 브라우저 세션에만 유지되며 서버에 저장되지 않아요.")
+            if st.button("가입하고 기록 저장하기", type="primary", use_container_width=True):
+                st.session_state.guest_mode = False
+                st.session_state.page = "today"
+                st.rerun()
         if st.session_state.auth and st.button("로그아웃", use_container_width=True):
             st.session_state.auth = None
             st.session_state.remote_loaded = False
@@ -1249,7 +1266,7 @@ def habits_page() -> None:
 initialize_state()
 inject_styles()
 backend = get_backend()
-if backend and not st.session_state.auth:
+if backend and not st.session_state.auth and not st.session_state.guest_mode:
     auth_screen(backend)
     st.stop()
 load_remote()

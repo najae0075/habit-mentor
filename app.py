@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
@@ -292,6 +293,38 @@ def display_name() -> str:
     return email.split("@", 1)[0] if email else "나"
 
 
+def exportable_data() -> dict[str, object]:
+    return {
+        "exported_at": now_kst().isoformat(),
+        "profile": {"nickname": st.session_state.nickname, "tone": st.session_state.tone},
+        "habits": {
+            "custom": st.session_state.custom_habits,
+            "focused": st.session_state.focus_habits,
+            "accepted_minutes": st.session_state.accepted,
+        },
+        "activity": {
+            "completion_history": st.session_state.completion_history,
+            "focus_history": st.session_state.focus_history,
+            "checkin_history": st.session_state.checkin_history,
+            "adjustment_history": st.session_state.adjustment_history,
+            "rest_history": st.session_state.rest_history,
+        },
+        "reminder_settings": st.session_state.reminder_settings,
+    }
+
+
+def clear_activity_data() -> None:
+    st.session_state.completed = set()
+    st.session_state.completion_history = {}
+    st.session_state.focus_history = {}
+    st.session_state.checkin_dates = []
+    st.session_state.checkin_history = {}
+    st.session_state.adjustment_history = {}
+    st.session_state.rest_history = {}
+    st.session_state.reminder_history = {}
+    st.session_state.active_date = date.today().isoformat()
+
+
 def now_kst() -> datetime:
     return datetime.now(timezone(timedelta(hours=9)))
 
@@ -537,6 +570,8 @@ def sidebar() -> None:
             go("profile")
         if st.button("◷  알림 설정", use_container_width=True):
             go("reminders")
+        if st.button("⇩  내 데이터", use_container_width=True):
+            go("data")
         st.divider()
         st.caption(f"멘토 말투 · {st.session_state.tone}")
         st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
@@ -929,6 +964,41 @@ def reminders_page() -> None:
     st.caption("현재 버전은 앱을 열어두거나 다시 방문했을 때 표시되는 앱 내부 알림입니다. 브라우저 푸시 알림은 다음 단계에서 연결할 수 있어요.")
 
 
+def data_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">MY DATA</div><h1>내 기록의 주인은<br><span class="accent">언제나 나예요.</span></h1><p>저장된 데이터를 내려받거나 활동 기록을 초기화할 수 있어요.</p></div>', unsafe_allow_html=True)
+
+    payload = json.dumps(exportable_data(), ensure_ascii=False, indent=2)
+    st.subheader("데이터 내보내기")
+    st.write("프로필, 습관 설정, 체크인과 완료 기록을 JSON 파일로 내려받습니다.")
+    st.download_button(
+        "내 데이터 다운로드",
+        data=payload,
+        file_name=f"daily-pace-{date.today().isoformat()}.json",
+        mime="application/json",
+        type="primary",
+        use_container_width=True,
+    )
+    st.caption("보안을 위해 앱 잠금 PIN 해시는 내보내기에 포함하지 않습니다.")
+
+    st.divider()
+    st.subheader("활동 기록 초기화")
+    st.warning("완료·체크인·회복·재조정 기록과 캐릭터 성장이 초기화됩니다. 계정, 닉네임, 습관 목록과 앱 잠금은 유지됩니다.")
+    with st.form("clear-activity-data"):
+        confirmed = st.checkbox("초기화 후 되돌릴 수 없음을 확인했습니다.")
+        phrase = st.text_input("확인을 위해 ‘기록 삭제’를 입력해주세요.")
+        clear = st.form_submit_button("활동 기록 초기화", use_container_width=True)
+    if clear:
+        if not confirmed or phrase.strip() != "기록 삭제":
+            st.error("확인 항목을 선택하고 ‘기록 삭제’를 정확히 입력해주세요.")
+        else:
+            clear_activity_data()
+            save_remote()
+            st.session_state.flash = "활동 기록을 초기화했어요. 새로운 시작도 온전한 선택이에요."
+            go("today")
+
+
 def security_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -1072,5 +1142,7 @@ elif st.session_state.page == "profile":
     profile_page()
 elif st.session_state.page == "reminders":
     reminders_page()
+elif st.session_state.page == "data":
+    data_page()
 else:
     today_page()

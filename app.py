@@ -13,6 +13,7 @@ from uuid import uuid4
 import streamlit as st
 
 from supabase_backend import SupabaseBackend, SupabaseError
+from state_validation import normalize_saved_state
 
 
 st.set_page_config(
@@ -176,12 +177,13 @@ def load_remote() -> None:
     except SupabaseError as error:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
+    normalized = normalize_saved_state(saved)
     if saved:
         for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "feedback_history", "reminder_settings", "reminder_history", "app_lock", "onboarding_complete"):
-            if key in saved:
-                st.session_state[key] = saved[key]
-        st.session_state.completed = set(saved.get("completed", []))
-        if "onboarding_complete" not in saved:
+            if key in normalized:
+                st.session_state[key] = normalized[key]
+        st.session_state.completed = set(normalized.get("completed", []))
+        if "onboarding_complete" not in normalized:
             st.session_state.onboarding_complete = True
     else:
         st.session_state.onboarding_complete = False

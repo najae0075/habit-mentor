@@ -87,6 +87,7 @@ def initialize_state() -> None:
         "completion_history": {},
         "focus_history": {},
         "checkin_dates": [],
+        "checkin_history": {},
         "active_date": date.today().isoformat(),
         "adjustment_history": {},
         "rest_history": {},
@@ -136,6 +137,7 @@ def serializable_state() -> dict[str, object]:
         "completion_history": st.session_state.completion_history,
         "focus_history": st.session_state.focus_history,
         "checkin_dates": st.session_state.checkin_dates,
+        "checkin_history": st.session_state.checkin_history,
         "active_date": st.session_state.active_date,
         "adjustment_history": st.session_state.adjustment_history,
         "rest_history": st.session_state.rest_history,
@@ -170,7 +172,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "checkin_history", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -203,6 +205,17 @@ def weekly_stats() -> tuple[int, int, int]:
 
     streak, _ = streak_details()
     return success_rate, streak, len(set(st.session_state.checkin_dates) & set(dates))
+
+
+def weekly_checkin_insights() -> tuple[float | None, int, int]:
+    today = date.today()
+    dates = {(today - timedelta(days=offset)).isoformat() for offset in range(7)}
+    entries = [entry for day, entry in st.session_state.checkin_history.items() if day in dates]
+    sleep_values = [float(entry["sleep"]) for entry in entries if isinstance(entry.get("sleep"), (int, float))]
+    average_sleep = round(sum(sleep_values) / len(sleep_values), 1) if sleep_values else None
+    overtime_days = sum(entry.get("overtime") == "있어요" for entry in entries)
+    low_condition_days = sum(entry.get("condition") == "나쁨" for entry in entries)
+    return average_sleep, overtime_days, low_condition_days
 
 
 def streak_details() -> tuple[int, str | None]:
@@ -628,6 +641,14 @@ def checkin_page() -> None:
             today_key = date.today().isoformat()
             if today_key not in st.session_state.checkin_dates:
                 st.session_state.checkin_dates.append(today_key)
+            st.session_state.checkin_history[today_key] = {
+                "condition": st.session_state.condition,
+                "overtime": st.session_state.overtime,
+                "available_minutes": st.session_state.available_minutes,
+                "motivation": st.session_state.motivation,
+                "sleep": st.session_state.sleep,
+                "note": st.session_state.note,
+            }
             save_remote()
             go("recommendation")
 
@@ -762,6 +783,19 @@ def records_page() -> None:
         st.success(f"♡ {recovered.month}/{recovered.day}의 공백은 복귀 기회로 연결했어요. 연속 기록은 안전해요.")
     else:
         st.caption("하루를 놓쳐도 다음 날 돌아오면 한 번의 복귀 기회로 연속 기록을 이어드려요.")
+
+    st.subheader("최근 컨디션 인사이트")
+    average_sleep, overtime_days, low_condition_days = weekly_checkin_insights()
+    insight1, insight2, insight3 = st.columns(3)
+    insight1.metric("평균 수면", f"{average_sleep:.1f}시간" if average_sleep is not None else "기록 없음")
+    insight2.metric("야근", f"{overtime_days}일")
+    insight3.metric("컨디션 나쁨", f"{low_condition_days}일")
+    if average_sleep is not None and average_sleep < 6:
+        st.warning("최근 수면이 부족한 편이에요. 오늘은 최소 목표나 회복 목표를 우선해보세요.")
+    elif overtime_days >= 3:
+        st.info("야근이 잦았어요. 이번 주 목표를 평소보다 작게 유지해도 충분해요.")
+    elif average_sleep is not None:
+        st.success("체크인 데이터가 쌓이고 있어요. 내 리듬을 알아가는 것도 중요한 진전이에요.")
 
     st.subheader("최근 7일")
     habits = {habit.key: habit for habit in all_habits()}

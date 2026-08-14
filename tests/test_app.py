@@ -140,6 +140,16 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(metrics["야근"], "1일")
         self.assertEqual(metrics["컨디션 나쁨"], "1일")
 
+    def test_data_page_requires_explicit_reset_confirmation(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "data"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertTrue(any("되돌릴 수 없음을 확인" in field.label for field in app.checkbox))
+        self.assertTrue(any("기록 삭제" in field.label for field in app.text_input))
+        self.assertTrue(any("활동 기록 초기화" in button.label for button in app.button))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,113 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@500;600&display=swap');
+:root { --ink:#21342d; --muted:#718078; --paper:#f7f5ef; --dark:#385d4e; --coral:#b56856; --line:#deddd5; }
+.stApp { background:var(--paper); color:var(--ink); font-family:'Noto Sans KR',sans-serif; }
+[data-testid="stSidebar"] { background:#f0eee7; border-right:1px solid var(--line); }
+[data-testid="stSidebar"] hr { border-color:var(--line); }
+.block-container { width:min(100%,1280px); max-width:1280px; padding:2rem 2rem 5rem; }
+h1,h2,h3 { color:var(--ink); font-family:'Noto Serif KR',serif!important; letter-spacing:-.035em; }
+.brand { font:600 1.35rem 'Noto Serif KR',serif; display:flex; align-items:center; gap:.65rem; margin:.2rem 0 2rem; }
+.brand-mark { display:inline-grid; place-items:center; width:31px; height:31px; border-radius:55% 45%; background:var(--dark); color:white; font-style:italic; }
+.profile { margin-top:2rem; padding:1rem; border-top:1px solid var(--line); color:var(--muted); font-size:.8rem; }
+.profile strong { color:var(--ink); display:block; font-size:.95rem; }
+.eyebrow { color:#87948d; font-size:.65rem; letter-spacing:.18em; font-weight:700; margin-bottom:.6rem; }
+.hero { min-height:315px; border-radius:28px; background:#e6e4da; padding:3.2rem 4rem; position:relative; overflow:hidden; }
+.hero h1 { font-size:2.65rem; line-height:1.25; margin:.2rem 0 1rem; }
+.hero em,.accent { color:var(--coral); font-style:normal; }
+.hero p { color:var(--muted); line-height:1.8; }
+.character { position:absolute; right:8%; bottom:-20px; width:150px; height:180px; border-radius:48% 52% 42% 45%; background:#91ad99; box-shadow:0 15px 25px #385d4e22; }
+.character:before { content:'• ᴗ •'; position:absolute; top:40px; left:24px; width:102px; height:78px; display:grid; place-items:center; border-radius:47%; background:#e5d5b8; color:#31483e; letter-spacing:.5rem; }
+.character:after { content:'천천히 해도 괜찮아'; position:absolute; right:95px; top:-32px; width:130px; padding:.65rem .8rem; border-radius:14px 14px 4px 14px; background:#fffdf7; color:#6d766f; font-size:.7rem; text-align:center; }
+.section-title { margin:2.5rem 0 1rem; }
+.section-title h2 { margin:.1rem 0; font-size:1.5rem; }
+.habit-card { min-height:235px; padding:1.35rem; background:#fbfaf6; border:1px solid var(--line); border-radius:18px; }
+.habit-icon { display:grid; place-items:center; width:40px; height:40px; border-radius:12px; background:#f3d8cc; color:#9d5e4c; font-size:1.1rem; }
+.habit-card .category { color:#9a9f9b; font-size:.65rem; margin:1rem 0 .3rem; }
+.habit-card h3 { font-size:1.05rem; margin:.2rem 0 1rem; }
+.pill { display:inline-block; background:#eeefe9; color:#65756d; border-radius:8px; padding:.4rem .6rem; font-size:.7rem; }
+.week-card,.form-card,.recommend-card { background:#fbfaf6; border:1px solid var(--line); border-radius:22px; padding:1.7rem 2rem; }
+.week-card { margin-top:1.3rem; display:flex; justify-content:space-between; align-items:center; }
+.week-card strong { color:var(--coral); font:500 2rem 'Noto Serif KR',serif; }
+.center-heading { text-align:center; max-width:650px; margin:1.2rem auto 2rem; }
+.center-heading h1 { font-size:2.35rem; line-height:1.35; }
+.center-heading p { color:var(--muted); font-size:.85rem; }
+.question-label { font:600 1rem 'Noto Serif KR',serif; margin:1.5rem 0 .4rem; }
+.question-label span { color:var(--coral); font:700 .65rem 'Noto Sans KR'; letter-spacing:.1em; margin-right:.6rem; }
+.recommend-card { max-width:760px; margin:auto; padding:2rem 2.5rem; }
+.recommend-title { display:flex; align-items:center; gap:1rem; margin:1.8rem 0; }
+.recommend-title h2 { margin:.2rem 0; }
+.reason { background:#eff0e9; color:#65746c; border-radius:13px; padding:1rem; font-size:.82rem; }
+.recovery { text-align:center; color:var(--muted); font-size:.78rem; margin:1.2rem; }
+.character-stage { display:grid; place-items:center; min-height:260px; margin:1rem 0 2rem; border-radius:24px; background:#e6e4da; }
+.character-avatar { display:grid; place-items:center; width:150px; height:170px; border-radius:48% 52% 42% 45%; background:#91ad99; color:#31483e; font-size:2rem; box-shadow:0 15px 25px #385d4e22; }
+.badge-card { min-height:125px; padding:1.1rem; border:1px solid var(--line); border-radius:16px; background:#fbfaf6; }
+.badge-card.locked { opacity:.45; filter:grayscale(1); }
+.calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin:1rem 0; }
+.calendar-head { text-align:center; color:var(--muted); font-size:.72rem; padding:.4rem; }
+.calendar-day { min-height:76px; padding:.55rem; border:1px solid var(--line); border-radius:12px; background:#fbfaf6; font-size:.72rem; }
+.calendar-day.empty { visibility:hidden; }
+.calendar-day strong { display:block; font-size:.85rem; margin-bottom:.3rem; }
+.calendar-day.completed { background:#e7efe8; border-color:#aac0ae; }
+.calendar-day.recovery { background:#f6e8df; border-color:#d8b6a8; }
+.calendar-day.checked { box-shadow:inset 0 -3px #91ad99; }
+div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:44px; white-space:normal; }
+div.stButton > button[kind="primary"] { background:var(--dark); border-color:var(--dark); }
+[data-testid="stMetricValue"] { color:var(--coral); }
+[data-testid="stDataFrame"], [data-testid="stTable"] { max-width:100%; overflow-x:auto; }
+[data-testid="stMetric"] { min-width:0; }
+[data-testid="stMetricLabel"] { white-space:normal; }
+
+@media (min-width:701px) and (max-width:1024px) {
+  .block-container { padding:1.5rem 1.5rem 5rem; }
+  [data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:1rem; }
+  [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    flex:1 1 calc(50% - .5rem)!important;
+    width:calc(50% - .5rem)!important;
+    min-width:280px!important;
+  }
+  .hero { min-height:340px; padding:2.6rem 3rem; }
+  .hero h1 { font-size:2.3rem; }
+  .character { right:3%; transform:scale(.9); transform-origin:bottom right; }
+  .habit-card { min-height:210px; }
+  .center-heading h1 { font-size:2.1rem; }
+  .week-card,.form-card,.recommend-card { padding:1.5rem; }
+}
+
+@media (max-width:700px) {
+  .block-container { width:100%; padding:1rem .85rem 4.5rem; }
+  [data-testid="stHorizontalBlock"] { flex-direction:column; gap:.65rem; }
+  [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+    flex:1 1 100%!important;
+    width:100%!important;
+    min-width:0!important;
+  }
+  [data-testid="stSidebar"] { width:min(86vw,320px)!important; }
+  [data-testid="stMetric"] { padding:.8rem 1rem; border:1px solid var(--line); border-radius:14px; background:#fbfaf6; }
+  [data-testid="stMetricValue"] { font-size:1.65rem; }
+  .brand { margin-bottom:1.2rem; }
+  .hero { min-height:445px; padding:1.8rem 1.25rem 12rem; border-radius:20px; }
+  .hero h1 { font-size:1.85rem; line-height:1.3; max-width:100%; }
+  .hero p { font-size:.88rem; line-height:1.65; }
+  .character { right:1rem; bottom:-28px; transform:scale(.72); transform-origin:bottom right; }
+  .character:after { right:72px; top:-48px; }
+  .section-title { margin-top:1.8rem; }
+  .section-title h2 { font-size:1.3rem; }
+  .habit-card { min-height:auto; padding:1.1rem; margin-bottom:.25rem; }
+  .week-card { display:block; padding:1.2rem; }
+  .week-card > div + div { margin-top:1rem; }
+  .center-heading { text-align:left; margin:.8rem 0 1.4rem; }
+  .center-heading h1 { font-size:1.75rem; line-height:1.35; }
+  .center-heading p { font-size:.82rem; line-height:1.6; }
+  .form-card,.recommend-card { padding:1.1rem; border-radius:17px; }
+  .recommend-title { align-items:flex-start; }
+  .recommend-title h2 { font-size:1.3rem; }
+  .question-label { font-size:.95rem; }
+  .character-stage { min-height:220px; }
+  .badge-card { min-height:auto; }
+  .calendar-grid { gap:2px; }
+  .calendar-head { font-size:.58rem; padding:.2rem 0; }
+  .calendar-day { min-height:50px; padding:.25rem; border-radius:8px; font-size:.55rem; overflow:hidden; }
+  .calendar-day strong { font-size:.72rem; }
+  div.stButton > button { width:100%; min-height:46px; font-size:.92rem; }
+  input, textarea, [data-baseweb="select"] { font-size:16px!important; }
+  .stDownloadButton > button { min-height:46px; width:100%; }
+}

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import pbkdf2_hmac
@@ -12,8 +11,21 @@ from uuid import uuid4
 
 import streamlit as st
 
-from supabase_backend import SupabaseBackend, SupabaseError
+from components.layout import inject_styles
+from components.sidebar import render_sidebar
+from pages.admin import admin_page
+from pages.guide import guide_screen
+from pages.router import render_page
+from services.supabase import SupabaseBackend, SupabaseError
 from state_validation import normalize_saved_state
+from domain.habits import DEFAULT_HABITS as HABITS, Habit, build_habits, habit_to_dict, select_focused
+from domain.progress import (
+    calendar_summary as calculate_calendar_summary,
+    offset_month as calculate_offset_month,
+    streak_details as calculate_streak_details,
+    weekly_stats as calculate_weekly_stats,
+)
+from domain.recommendations import recommend_habit
 
 
 st.set_page_config(
@@ -24,44 +36,12 @@ st.set_page_config(
 )
 
 
-@dataclass(frozen=True)
-class Habit:
-    key: str
-    icon: str
-    category: str
-    title: str
-    default_minutes: int
-    reduced_minutes: int
-    minimum_minutes: int
-
-
-HABITS = [
-    Habit("side_project", "✦", "성장", "사이드 프로젝트", 40, 20, 5),
-    Habit("stretch", "◒", "건강", "저녁 스트레칭", 20, 10, 2),
-    Habit("reading", "▤", "마음", "잠들기 전 독서", 20, 10, 5),
-]
-
-
-def habit_to_dict(habit: Habit) -> dict[str, object]:
-    return {
-        "key": habit.key,
-        "icon": habit.icon,
-        "category": habit.category,
-        "title": habit.title,
-        "default_minutes": habit.default_minutes,
-        "reduced_minutes": habit.reduced_minutes,
-        "minimum_minutes": habit.minimum_minutes,
-    }
-
-
 def all_habits() -> list[Habit]:
-    custom = [Habit(**item) for item in st.session_state.custom_habits]
-    return [*HABITS, *custom]
+    return build_habits(st.session_state.custom_habits)
 
 
 def focused_habits() -> list[Habit]:
-    selected = set(st.session_state.focus_habits)
-    return [habit for habit in all_habits() if habit.key in selected][:3]
+    return select_focused(all_habits(), st.session_state.focus_habits)
 
 TONE_COPY = {
     "따뜻한 친구": ("오늘의 속도도 충분히 좋아요.", "지금 가능한 만큼만 해봐요."),
@@ -254,20 +234,12 @@ def record_today() -> None:
 
 
 def weekly_stats() -> tuple[int, int, int]:
-    today = date.today()
-    dates = [(today - timedelta(days=offset)).isoformat() for offset in range(7)]
-    completed_count = 0
-    target_count = 0
-    for day in dates:
-        focus = set(st.session_state.focus_history.get(day, []))
-        focus -= set(st.session_state.rest_history.get(day, []))
-        completed = set(st.session_state.completion_history.get(day, []))
-        completed_count += len(completed & focus)
-        target_count += len(focus)
-    success_rate = round(completed_count / target_count * 100) if target_count else 0
-
-    streak, _ = streak_details()
-    return success_rate, streak, len(set(st.session_state.checkin_dates) & set(dates))
+    return calculate_weekly_stats(
+        st.session_state.focus_history,
+        st.session_state.completion_history,
+        st.session_state.rest_history,
+        st.session_state.checkin_dates,
+    )
 
 
 def weekly_checkin_insights() -> tuple[float | None, int, int]:
@@ -282,43 +254,21 @@ def weekly_checkin_insights() -> tuple[float | None, int, int]:
 
 
 def streak_details() -> tuple[int, str | None]:
-    cursor = date.today()
-    today_key = cursor.isoformat()
-    if not st.session_state.completion_history.get(today_key) and not st.session_state.rest_history.get(today_key):
-        cursor -= timedelta(days=1)
-
-    streak = 0
-    recovery_day = None
-    recovery_candidate = None
-    for _ in range(366):
-        day_key = cursor.isoformat()
-        completed = bool(st.session_state.completion_history.get(day_key))
-        planned_rest = bool(st.session_state.rest_history.get(day_key))
-        if completed or planned_rest:
-            streak += 1
-            if recovery_candidate:
-                recovery_day = recovery_candidate
-                recovery_candidate = None
-        elif streak and recovery_day is None and recovery_candidate is None:
-            recovery_candidate = day_key
-        else:
-            break
-        cursor -= timedelta(days=1)
-    return streak, recovery_day
+    return calculate_streak_details(st.session_state.completion_history, st.session_state.rest_history)
 
 
 def offset_month(offset: int) -> tuple[int, int]:
-    today = date.today()
-    month_index = today.year * 12 + today.month - 1 + offset
-    return divmod(month_index, 12)[0], divmod(month_index, 12)[1] + 1
+    return calculate_offset_month(offset)
 
 
 def calendar_summary(year: int, month: int) -> tuple[int, int, int]:
-    prefix = f"{year:04d}-{month:02d}-"
-    completions = sum(len(set(items)) for day, items in st.session_state.completion_history.items() if day.startswith(prefix))
-    rest_days = sum(bool(items) for day, items in st.session_state.rest_history.items() if day.startswith(prefix))
-    checkins = sum(day.startswith(prefix) for day in set(st.session_state.checkin_dates))
-    return completions, rest_days, checkins
+    return calculate_calendar_summary(
+        st.session_state.completion_history,
+        st.session_state.rest_history,
+        st.session_state.checkin_dates,
+        year,
+        month,
+    )
 
 
 def character_stats() -> tuple[int, str, int, int]:
@@ -507,44 +457,6 @@ def auth_screen(backend: SupabaseBackend) -> None:
             st.rerun()
 
 
-def guide_screen() -> None:
-    st.markdown(
-        '<div class="center-heading"><div class="eyebrow">HOW TO USE</div>'
-        '<h1>오늘의 나에게 맞춰<br><span class="accent">작게, 다시 시작해요.</span></h1>'
-        '<p>데일리 페이스가 계획을 부담이 아닌 이어갈 수 있는 습관으로 바꾸는 방법이에요.</p></div>',
-        unsafe_allow_html=True,
-    )
-
-    sections = [
-        ("01", "오늘 상태 체크인", "컨디션, 야근 여부, 사용할 수 있는 시간, 의욕, 수면과 한마디를 짧게 알려주세요. 정답은 없고 지금 상태 그대로 선택하면 돼요."),
-        ("02", "유연한 목표 추천", "오늘의 상태와 최근 난이도 피드백을 반영해 기본·축소·최소 목표 중 하나를 추천해요. 추천 시간은 직접 수정한 뒤 수락할 수 있어요."),
-        ("03", "핵심 습관 최대 3개", "운동, 공부, 독서부터 나만의 습관까지 자유롭게 등록하세요. 다만 오늘 집중할 핵심 습관은 최대 3개로 가볍게 유지해요."),
-        ("04", "계획 조정과 회복", "야근, 피로, 일정 변경, 의욕 저하가 생기면 목표를 더 작게 줄이거나 휴식을 오늘의 정당한 목표로 선택할 수 있어요."),
-        ("05", "기록과 복귀 기회", "완료 기록, 주간 성공률, 캘린더와 연속 달성일을 확인하세요. 하루를 놓쳐도 다음 날 돌아오면 한 번의 회복 기회로 흐름을 지켜줘요."),
-        ("06", "함께 성장하는 캐릭터", "작은 습관을 완료할 때마다 동행 캐릭터가 성장해요. 완벽한 결과보다 다시 행동한 순간을 보상해요."),
-        ("07", "부드러운 체크인 알림", "아침, 퇴근 전, 습관 시작 전 중 원하는 시점을 설정할 수 있어요. 놓치면 30분 뒤 한 번만 다시 알리고 더 재촉하지 않아요."),
-        ("08", "내 기록과 보안", "로그인하면 기록이 기기 간 동기화돼요. 별도 앱 잠금 PIN, 데이터 내려받기와 활동 기록 초기화 기능도 제공해요."),
-    ]
-    for number, title, description in sections:
-        st.markdown(
-            f'<div class="habit-card"><div class="eyebrow">STEP {number}</div>'
-            f'<h3>{title}</h3><p>{description}</p></div>',
-            unsafe_allow_html=True,
-        )
-
-    st.info("체험 모드의 기록은 현재 브라우저 세션에만 유지되며 서버에는 저장되지 않아요.")
-    back_col, preview_col = st.columns(2)
-    if back_col.button("로그인·회원가입으로 돌아가기", use_container_width=True):
-        st.session_state.show_guide = False
-        st.rerun()
-    if preview_col.button("회원가입 없이 체험 시작", type="primary", use_container_width=True):
-        st.session_state.show_guide = False
-        st.session_state.guest_mode = True
-        st.session_state.nickname = "체험 사용자"
-        st.session_state.page = "today"
-        st.rerun()
-
-
 def onboarding_screen() -> None:
     auth = st.session_state.auth or {}
     email = auth.get("user", {}).get("email", "")
@@ -619,207 +531,16 @@ def latest_habit_feedback(habit_key: str) -> str | None:
 
 
 def recommend(habit: Habit) -> dict[str, object]:
-    condition = st.session_state.condition
-    overtime = st.session_state.overtime == "있어요"
-    motivation = st.session_state.motivation
-    sleep = st.session_state.sleep
-    available = st.session_state.available_minutes
-
-    if sleep < 5 and condition == "나쁨":
-        return {
-            "level": "회복",
-            "minutes": 0,
-            "title": "오늘은 편안히 쉬기",
-            "reason": "수면과 컨디션을 고려해 오늘은 회복을 우선해요.",
-        }
-
-    recent_feedback = latest_habit_feedback(habit.key)
-    constraints = sum((condition == "나쁨", overtime, motivation == "낮음"))
-    if recent_feedback == "버거웠어요":
-        constraints += 1
-    if constraints >= 2:
-        amount = min(habit.minimum_minutes, available)
-        return {
-            "level": "최소",
-            "minutes": amount,
-            "title": f"{amount}분만 가볍게 시작하기",
-            "reason": "야근과 현재 에너지를 고려해 연결만 이어갈 만큼 줄였어요.",
-        }
-    if constraints == 1 or available < habit.default_minutes:
-        amount = max(habit.minimum_minutes, min(habit.reduced_minutes, available))
-        return {
-            "level": "축소",
-            "minutes": amount,
-            "title": f"{amount}분만 집중하기",
-            "reason": "최근 난이도 피드백과 오늘 쓸 수 있는 시간을 반영해 무리 없도록 조정했어요." if recent_feedback else "오늘 쓸 수 있는 시간 안에서 무리 없도록 조정했어요.",
-        }
-    return {
-        "level": "기본",
-        "minutes": habit.default_minutes,
-        "title": f"{habit.default_minutes}분 집중하기",
-        "reason": "오늘은 기본 목표를 충분히 해낼 수 있는 상태예요.",
-    }
-
-
-def inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@500;600&display=swap');
-        :root { --ink:#21342d; --muted:#718078; --paper:#f7f5ef; --dark:#385d4e; --coral:#b56856; --line:#deddd5; }
-        .stApp { background:var(--paper); color:var(--ink); font-family:'Noto Sans KR',sans-serif; }
-        [data-testid="stSidebar"] { background:#f0eee7; border-right:1px solid var(--line); }
-        [data-testid="stSidebar"] hr { border-color:var(--line); }
-        .block-container { width:min(100%,1280px); max-width:1280px; padding:2rem 2rem 5rem; }
-        h1,h2,h3 { color:var(--ink); font-family:'Noto Serif KR',serif!important; letter-spacing:-.035em; }
-        .brand { font:600 1.35rem 'Noto Serif KR',serif; display:flex; align-items:center; gap:.65rem; margin:.2rem 0 2rem; }
-        .brand-mark { display:inline-grid; place-items:center; width:31px; height:31px; border-radius:55% 45%; background:var(--dark); color:white; font-style:italic; }
-        .profile { margin-top:2rem; padding:1rem; border-top:1px solid var(--line); color:var(--muted); font-size:.8rem; }
-        .profile strong { color:var(--ink); display:block; font-size:.95rem; }
-        .eyebrow { color:#87948d; font-size:.65rem; letter-spacing:.18em; font-weight:700; margin-bottom:.6rem; }
-        .hero { min-height:315px; border-radius:28px; background:#e6e4da; padding:3.2rem 4rem; position:relative; overflow:hidden; }
-        .hero h1 { font-size:2.65rem; line-height:1.25; margin:.2rem 0 1rem; }
-        .hero em,.accent { color:var(--coral); font-style:normal; }
-        .hero p { color:var(--muted); line-height:1.8; }
-        .character { position:absolute; right:8%; bottom:-20px; width:150px; height:180px; border-radius:48% 52% 42% 45%; background:#91ad99; box-shadow:0 15px 25px #385d4e22; }
-        .character:before { content:'• ᴗ •'; position:absolute; top:40px; left:24px; width:102px; height:78px; display:grid; place-items:center; border-radius:47%; background:#e5d5b8; color:#31483e; letter-spacing:.5rem; }
-        .character:after { content:'천천히 해도 괜찮아'; position:absolute; right:95px; top:-32px; width:130px; padding:.65rem .8rem; border-radius:14px 14px 4px 14px; background:#fffdf7; color:#6d766f; font-size:.7rem; text-align:center; }
-        .section-title { margin:2.5rem 0 1rem; }
-        .section-title h2 { margin:.1rem 0; font-size:1.5rem; }
-        .habit-card { min-height:235px; padding:1.35rem; background:#fbfaf6; border:1px solid var(--line); border-radius:18px; }
-        .habit-icon { display:grid; place-items:center; width:40px; height:40px; border-radius:12px; background:#f3d8cc; color:#9d5e4c; font-size:1.1rem; }
-        .habit-card .category { color:#9a9f9b; font-size:.65rem; margin:1rem 0 .3rem; }
-        .habit-card h3 { font-size:1.05rem; margin:.2rem 0 1rem; }
-        .pill { display:inline-block; background:#eeefe9; color:#65756d; border-radius:8px; padding:.4rem .6rem; font-size:.7rem; }
-        .week-card,.form-card,.recommend-card { background:#fbfaf6; border:1px solid var(--line); border-radius:22px; padding:1.7rem 2rem; }
-        .week-card { margin-top:1.3rem; display:flex; justify-content:space-between; align-items:center; }
-        .week-card strong { color:var(--coral); font:500 2rem 'Noto Serif KR',serif; }
-        .center-heading { text-align:center; max-width:650px; margin:1.2rem auto 2rem; }
-        .center-heading h1 { font-size:2.35rem; line-height:1.35; }
-        .center-heading p { color:var(--muted); font-size:.85rem; }
-        .question-label { font:600 1rem 'Noto Serif KR',serif; margin:1.5rem 0 .4rem; }
-        .question-label span { color:var(--coral); font:700 .65rem 'Noto Sans KR'; letter-spacing:.1em; margin-right:.6rem; }
-        .recommend-card { max-width:760px; margin:auto; padding:2rem 2.5rem; }
-        .recommend-title { display:flex; align-items:center; gap:1rem; margin:1.8rem 0; }
-        .recommend-title h2 { margin:.2rem 0; }
-        .reason { background:#eff0e9; color:#65746c; border-radius:13px; padding:1rem; font-size:.82rem; }
-        .recovery { text-align:center; color:var(--muted); font-size:.78rem; margin:1.2rem; }
-        .character-stage { display:grid; place-items:center; min-height:260px; margin:1rem 0 2rem; border-radius:24px; background:#e6e4da; }
-        .character-avatar { display:grid; place-items:center; width:150px; height:170px; border-radius:48% 52% 42% 45%; background:#91ad99; color:#31483e; font-size:2rem; box-shadow:0 15px 25px #385d4e22; }
-        .badge-card { min-height:125px; padding:1.1rem; border:1px solid var(--line); border-radius:16px; background:#fbfaf6; }
-        .badge-card.locked { opacity:.45; filter:grayscale(1); }
-        .calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin:1rem 0; }
-        .calendar-head { text-align:center; color:var(--muted); font-size:.72rem; padding:.4rem; }
-        .calendar-day { min-height:76px; padding:.55rem; border:1px solid var(--line); border-radius:12px; background:#fbfaf6; font-size:.72rem; }
-        .calendar-day.empty { visibility:hidden; }
-        .calendar-day strong { display:block; font-size:.85rem; margin-bottom:.3rem; }
-        .calendar-day.completed { background:#e7efe8; border-color:#aac0ae; }
-        .calendar-day.recovery { background:#f6e8df; border-color:#d8b6a8; }
-        .calendar-day.checked { box-shadow:inset 0 -3px #91ad99; }
-        div.stButton > button { border-radius:11px; border-color:#bdc5bf; min-height:44px; white-space:normal; }
-        div.stButton > button[kind="primary"] { background:var(--dark); border-color:var(--dark); }
-        [data-testid="stMetricValue"] { color:var(--coral); }
-        [data-testid="stDataFrame"], [data-testid="stTable"] { max-width:100%; overflow-x:auto; }
-        [data-testid="stMetric"] { min-width:0; }
-        [data-testid="stMetricLabel"] { white-space:normal; }
-
-        @media (min-width:701px) and (max-width:1024px) {
-          .block-container { padding:1.5rem 1.5rem 5rem; }
-          [data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:1rem; }
-          [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-            flex:1 1 calc(50% - .5rem)!important;
-            width:calc(50% - .5rem)!important;
-            min-width:280px!important;
-          }
-          .hero { min-height:340px; padding:2.6rem 3rem; }
-          .hero h1 { font-size:2.3rem; }
-          .character { right:3%; transform:scale(.9); transform-origin:bottom right; }
-          .habit-card { min-height:210px; }
-          .center-heading h1 { font-size:2.1rem; }
-          .week-card,.form-card,.recommend-card { padding:1.5rem; }
-        }
-
-        @media (max-width:700px) {
-          .block-container { width:100%; padding:1rem .85rem 4.5rem; }
-          [data-testid="stHorizontalBlock"] { flex-direction:column; gap:.65rem; }
-          [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
-            flex:1 1 100%!important;
-            width:100%!important;
-            min-width:0!important;
-          }
-          [data-testid="stSidebar"] { width:min(86vw,320px)!important; }
-          [data-testid="stMetric"] { padding:.8rem 1rem; border:1px solid var(--line); border-radius:14px; background:#fbfaf6; }
-          [data-testid="stMetricValue"] { font-size:1.65rem; }
-          .brand { margin-bottom:1.2rem; }
-          .hero { min-height:445px; padding:1.8rem 1.25rem 12rem; border-radius:20px; }
-          .hero h1 { font-size:1.85rem; line-height:1.3; max-width:100%; }
-          .hero p { font-size:.88rem; line-height:1.65; }
-          .character { right:1rem; bottom:-28px; transform:scale(.72); transform-origin:bottom right; }
-          .character:after { right:72px; top:-48px; }
-          .section-title { margin-top:1.8rem; }
-          .section-title h2 { font-size:1.3rem; }
-          .habit-card { min-height:auto; padding:1.1rem; margin-bottom:.25rem; }
-          .week-card { display:block; padding:1.2rem; }
-          .week-card > div + div { margin-top:1rem; }
-          .center-heading { text-align:left; margin:.8rem 0 1.4rem; }
-          .center-heading h1 { font-size:1.75rem; line-height:1.35; }
-          .center-heading p { font-size:.82rem; line-height:1.6; }
-          .form-card,.recommend-card { padding:1.1rem; border-radius:17px; }
-          .recommend-title { align-items:flex-start; }
-          .recommend-title h2 { font-size:1.3rem; }
-          .question-label { font-size:.95rem; }
-          .character-stage { min-height:220px; }
-          .badge-card { min-height:auto; }
-          .calendar-grid { gap:2px; }
-          .calendar-head { font-size:.58rem; padding:.2rem 0; }
-          .calendar-day { min-height:50px; padding:.25rem; border-radius:8px; font-size:.55rem; overflow:hidden; }
-          .calendar-day strong { font-size:.72rem; }
-          div.stButton > button { width:100%; min-height:46px; font-size:.92rem; }
-          input, textarea, [data-baseweb="select"] { font-size:16px!important; }
-          .stDownloadButton > button { min-height:46px; width:100%; }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    return recommend_habit(
+        habit,
+        condition=st.session_state.condition,
+        has_overtime=st.session_state.overtime == "있어요",
+        motivation=st.session_state.motivation,
+        sleep_hours=st.session_state.sleep,
+        available_minutes=st.session_state.available_minutes,
+        recent_feedback=latest_habit_feedback(habit.key),
     )
 
-
-def sidebar() -> None:
-    with st.sidebar:
-        st.markdown('<div class="brand"><span class="brand-mark">d</span>daily pace</div>', unsafe_allow_html=True)
-        if st.button("⌂  오늘", use_container_width=True):
-            go("today")
-        if st.button("◫  기록", use_container_width=True):
-            go("records")
-        if st.button("◇  습관", use_container_width=True):
-            go("habits")
-        if st.button("☆  캐릭터", use_container_width=True):
-            go("character")
-        if st.button("⚿  앱 잠금", use_container_width=True):
-            go("security")
-        if st.button("⚙  프로필 설정", use_container_width=True):
-            go("profile")
-        if st.button("◷  알림 설정", use_container_width=True):
-            go("reminders")
-        if st.button("⇩  내 데이터", use_container_width=True):
-            go("data")
-        if is_admin() and st.button("▦  운영 지표", use_container_width=True):
-            go("admin")
-        st.divider()
-        st.caption(f"멘토 말투 · {st.session_state.tone}")
-        st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
-        if st.session_state.guest_mode:
-            st.info("체험 모드예요. 현재 기록은 브라우저 세션에만 유지되며 서버에 저장되지 않아요.")
-            if st.button("가입하고 기록 저장하기", type="primary", use_container_width=True):
-                st.session_state.guest_mode = False
-                st.session_state.page = "today"
-                st.rerun()
-        if st.session_state.auth and st.button("로그아웃", use_container_width=True):
-            st.session_state.auth = None
-            st.session_state.admin_metrics = None
-            st.session_state.remote_loaded = False
-            st.session_state.app_unlocked = False
-            st.rerun()
 
 
 def today_page() -> None:
@@ -1276,92 +997,6 @@ def data_page() -> None:
             go("today")
 
 
-def admin_page() -> None:
-    if st.button("← 오늘로 돌아가기"):
-        go("today")
-    st.markdown(
-        '<div class="center-heading"><div class="eyebrow">OPERATIONS</div>'
-        '<h1>사용자가 다시 돌아오는지<br><span class="accent">숫자로 확인해요.</span></h1>'
-        '<p>한국 시간 기준의 서비스 핵심 지표입니다. 개인의 자유 입력 내용은 표시하지 않아요.</p></div>',
-        unsafe_allow_html=True,
-    )
-    if not is_admin():
-        st.error("운영 지표를 볼 수 있는 관리자 계정이 아닙니다.")
-        return
-
-    backend = get_backend()
-    auth = st.session_state.auth
-    if not backend or not auth:
-        st.error("운영 지표를 불러오려면 관리자 계정으로 로그인해주세요.")
-        return
-
-    period_label = st.segmented_control(
-        "조회 기간",
-        ["오늘", "최근 7일", "최근 30일"],
-        default="최근 7일",
-    )
-    period_days = {"오늘": 1, "최근 7일": 7, "최근 30일": 30}[period_label]
-    refresh = st.button("지표 새로고침", type="primary")
-    cached = st.session_state.admin_metrics
-    if refresh or not isinstance(cached, dict) or cached.get("_period_days") != period_days:
-        try:
-            loaded = backend.load_admin_metrics(auth["access_token"], period_days)
-            st.session_state.admin_metrics = {**loaded, "_period_days": period_days}
-        except (SupabaseError, KeyError, TypeError) as error:
-            st.error(f"운영 지표를 불러오지 못했습니다: {error}")
-            return
-
-    metrics = st.session_state.admin_metrics or {}
-    if metrics.get("_legacy_rpc"):
-        st.warning(
-            "Supabase의 이전 집계 함수를 사용 중이에요. 페이지는 계속 사용할 수 있지만 기간별 지표와 전환율을 적용하려면 최신 supabase_schema.sql을 실행해주세요."
-        )
-    top = st.columns(4)
-    top[0].metric("가입 사용자", f"{metrics.get('registered_users', 0):,}명")
-    top[1].metric(f"{period_label} 활성 사용자", f"{metrics.get('active_users', 0):,}명")
-    top[2].metric(f"{period_label} 체크인율", f"{metrics.get('checkin_rate') or 0}%")
-    top[3].metric("다음 날 복귀", f"{metrics.get('next_day_returns', 0):,}명")
-
-    retention = st.columns(2)
-    retention[0].metric("7일 유지율", f"{metrics.get('retention_7') or 0}%")
-    retention[1].metric("30일 유지율", f"{metrics.get('retention_30') or 0}%")
-    st.caption("유지율은 가입일로부터 정확히 7일 또는 30일째 앱을 다시 사용한 사용자 비율입니다.")
-
-    conversion = st.columns(3)
-    conversion[0].metric("체크인 시작 → 완료", f"{metrics.get('checkin_completion_rate') or 0}%")
-    conversion[1].metric("추천 수락 → 습관 완료", f"{metrics.get('recommendation_completion_rate') or 0}%")
-    conversion[2].metric("다음 날 복귀율", f"{metrics.get('next_day_return_rate') or 0}%")
-
-    st.subheader(f"{period_label} 핵심 행동")
-    funnel = [
-        {"지표": "체크인 시작", "값": metrics.get("checkin_started_users", 0)},
-        {"지표": "체크인 완료", "값": metrics.get("checkin_completed_users", 0)},
-        {"지표": "추천 수락", "값": metrics.get("recommendations_accepted", 0)},
-        {"지표": "추천 수정", "값": metrics.get("recommendations_modified", 0)},
-        {"지표": "습관 완료", "값": metrics.get("habits_completed", 0)},
-        {"지표": "알림 노출", "값": metrics.get("reminders_shown", 0)},
-        {"지표": "알림 확인", "값": metrics.get("reminders_acknowledged", 0)},
-    ]
-    st.dataframe(funnel, hide_index=True, use_container_width=True)
-
-    daily = metrics.get("daily", [])
-    if daily:
-        st.subheader(f"{period_label} 활성·체크인 사용자")
-        daily_rows = [
-            {
-                "날짜": row.get("day", ""),
-                "활성 사용자": row.get("active_users", 0),
-                "체크인 사용자": row.get("checked_in_users", 0),
-            }
-            for row in daily
-            if isinstance(row, dict)
-        ]
-        st.dataframe(daily_rows, hide_index=True, use_container_width=True)
-        st.caption("한국 시간 기준 일별 수치이며 외부 차트 라이브러리 없이 표시합니다.")
-    else:
-        st.info("아직 표시할 일별 이벤트가 없습니다.")
-
-
 def security_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -1487,33 +1122,26 @@ if st.session_state.auth and not st.session_state.onboarding_complete:
 if st.session_state.app_lock and not st.session_state.app_unlocked:
     lock_screen()
     st.stop()
-sidebar()
+render_sidebar(go, is_admin, display_name)
 render_due_reminder()
 if st.session_state.flash:
     st.toast(st.session_state.flash, icon="🌿")
     st.session_state.flash = ""
 
-if st.session_state.page == "checkin":
-    checkin_page()
-elif st.session_state.page == "recommendation":
-    recommendation_page()
-elif st.session_state.page == "quick_adjust":
-    quick_adjust_page()
-elif st.session_state.page == "habits":
-    habits_page()
-elif st.session_state.page == "records":
-    records_page()
-elif st.session_state.page == "character":
-    character_page()
-elif st.session_state.page == "security":
-    security_page()
-elif st.session_state.page == "profile":
-    profile_page()
-elif st.session_state.page == "reminders":
-    reminders_page()
-elif st.session_state.page == "data":
-    data_page()
-elif st.session_state.page == "admin":
-    admin_page()
-else:
-    today_page()
+render_page(
+    st.session_state.page,
+    {
+        "checkin": checkin_page,
+        "recommendation": recommendation_page,
+        "quick_adjust": quick_adjust_page,
+        "habits": habits_page,
+        "records": records_page,
+        "character": character_page,
+        "security": security_page,
+        "profile": profile_page,
+        "reminders": reminders_page,
+        "data": data_page,
+        "admin": lambda: admin_page(go, is_admin, get_backend, SupabaseError),
+    },
+    today_page,
+)

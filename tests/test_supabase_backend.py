@@ -153,6 +153,25 @@ class SupabaseBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "1일, 7일 또는 30일"):
             self.backend.load_admin_metrics("admin-token", 14)
 
+    @patch("supabase_backend.requests.request")
+    def test_falls_back_to_legacy_admin_rpc_when_schema_cache_is_stale(self, request):
+        request.side_effect = [
+            Mock(
+                ok=False,
+                status_code=404,
+                json=lambda: {
+                    "message": "Could not find the function public.admin_analytics_dashboard(p_days) in the schema cache"
+                },
+            ),
+            Mock(ok=True, json=lambda: {"registered_users": 3}),
+        ]
+
+        metrics = self.backend.load_admin_metrics("admin-token", 7)
+
+        self.assertTrue(metrics["_legacy_rpc"])
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_args.kwargs["json"], {})
+
     @patch("supabase_backend.requests.request", side_effect=requests.Timeout)
     def test_network_failure_has_user_friendly_message(self, _request):
         with self.assertRaisesRegex(SupabaseError, "기록 서버에 연결할 수 없습니다"):

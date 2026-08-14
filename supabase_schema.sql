@@ -216,6 +216,9 @@ $$;
 revoke all on function public.admin_analytics_dashboard(integer) from public;
 grant execute on function public.admin_analytics_dashboard(integer) to authenticated;
 
+-- PostgREST가 변경된 함수 인자를 즉시 인식하도록 스키마 캐시를 갱신합니다.
+notify pgrst, 'reload schema';
+
 -- 관리자 등록 예시(사용자 UUID로 교체 후 SQL Editor에서 한 번 실행):
 -- insert into public.admin_users(user_id) values ('YOUR_AUTH_USER_UUID') on conflict do nothing;
 

@@ -113,6 +113,7 @@ def initialize_state() -> None:
         "auth": None,
         "guest_mode": False,
         "show_guide": False,
+        "admin_metrics": None,
         "remote_loaded": False,
     }
     for key, value in defaults.items():
@@ -127,6 +128,24 @@ def get_backend() -> SupabaseBackend | None:
     except FileNotFoundError:
         return None
     return SupabaseBackend(url, key) if url and key else None
+
+
+def is_admin() -> bool:
+    auth = st.session_state.auth or {}
+    user_id = auth.get("user", {}).get("id", "")
+    if not user_id:
+        return False
+    try:
+        configured = st.secrets.get("ADMIN_USER_IDS", "")
+    except FileNotFoundError:
+        return False
+    if isinstance(configured, str):
+        admin_ids = {item.strip() for item in configured.split(",") if item.strip()}
+    elif isinstance(configured, (list, tuple, set)):
+        admin_ids = {str(item).strip() for item in configured}
+    else:
+        admin_ids = set()
+    return user_id in admin_ids
 
 
 def serializable_state() -> dict[str, object]:
@@ -412,20 +431,29 @@ def render_due_reminder() -> None:
     if phase is None:
         return
 
+    track_event(
+        "reminder_shown",
+        {"phase": phase},
+        event_key=f"reminder_shown:{today_key}:{phase}",
+    )
+
     label = "부드러운 재알림" if phase == "retry" else "오늘의 체크인"
     st.info(f"♡ {label} · 지금 컨디션을 알려주면 오늘에 맞는 목표를 제안할게요.")
     check_col, later_col, dismiss_col = st.columns(3)
     if check_col.button("지금 체크인", type="primary", key=f"reminder-check-{phase}", use_container_width=True):
         history[today_key]["resolved"] = True
         save_remote()
+        track_event("reminder_acknowledged", {"phase": phase, "action": "checkin"})
         go("checkin")
     if phase == "first" and later_col.button("30분 뒤 다시", key="reminder-later", use_container_width=True):
         history[today_key]["shown_at"] = now.isoformat()
         save_remote()
+        track_event("reminder_acknowledged", {"phase": phase, "action": "later"})
         st.rerun()
     if dismiss_col.button("오늘은 괜찮아요", key=f"reminder-dismiss-{phase}", use_container_width=True):
         history[today_key]["resolved"] = True
         save_remote()
+        track_event("reminder_acknowledged", {"phase": phase, "action": "dismiss"})
         st.rerun()
 
 
@@ -459,6 +487,7 @@ def auth_screen(backend: SupabaseBackend) -> None:
             if result.get("access_token"):
                 st.session_state.auth = result
                 st.session_state.guest_mode = False
+                st.session_state.admin_metrics = None
                 st.session_state.remote_loaded = False
                 st.rerun()
             else:
@@ -727,6 +756,8 @@ def sidebar() -> None:
             go("reminders")
         if st.button("⇩  내 데이터", use_container_width=True):
             go("data")
+        if is_admin() and st.button("▦  운영 지표", use_container_width=True):
+            go("admin")
         st.divider()
         st.caption(f"멘토 말투 · {st.session_state.tone}")
         st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
@@ -738,6 +769,7 @@ def sidebar() -> None:
                 st.rerun()
         if st.session_state.auth and st.button("로그아웃", use_container_width=True):
             st.session_state.auth = None
+            st.session_state.admin_metrics = None
             st.session_state.remote_loaded = False
             st.session_state.app_unlocked = False
             st.rerun()
@@ -1197,6 +1229,65 @@ def data_page() -> None:
             go("today")
 
 
+def admin_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown(
+        '<div class="center-heading"><div class="eyebrow">OPERATIONS</div>'
+        '<h1>사용자가 다시 돌아오는지<br><span class="accent">숫자로 확인해요.</span></h1>'
+        '<p>한국 시간 기준의 서비스 핵심 지표입니다. 개인의 자유 입력 내용은 표시하지 않아요.</p></div>',
+        unsafe_allow_html=True,
+    )
+    if not is_admin():
+        st.error("운영 지표를 볼 수 있는 관리자 계정이 아닙니다.")
+        return
+
+    backend = get_backend()
+    auth = st.session_state.auth
+    if not backend or not auth:
+        st.error("운영 지표를 불러오려면 관리자 계정으로 로그인해주세요.")
+        return
+
+    refresh = st.button("지표 새로고침", type="primary")
+    if refresh or st.session_state.admin_metrics is None:
+        try:
+            st.session_state.admin_metrics = backend.load_admin_metrics(auth["access_token"])
+        except (SupabaseError, KeyError, TypeError) as error:
+            st.error(f"운영 지표를 불러오지 못했습니다: {error}")
+            return
+
+    metrics = st.session_state.admin_metrics or {}
+    top = st.columns(4)
+    top[0].metric("가입 사용자", f"{metrics.get('registered_users', 0):,}명")
+    top[1].metric("오늘 활성 사용자", f"{metrics.get('active_users', 0):,}명")
+    top[2].metric("오늘 체크인율", f"{metrics.get('checkin_rate') or 0}%")
+    top[3].metric("다음 날 복귀", f"{metrics.get('next_day_returns', 0):,}명")
+
+    retention = st.columns(2)
+    retention[0].metric("7일 유지율", f"{metrics.get('retention_7') or 0}%")
+    retention[1].metric("30일 유지율", f"{metrics.get('retention_30') or 0}%")
+    st.caption("유지율은 가입일로부터 정확히 7일 또는 30일째 앱을 다시 사용한 사용자 비율입니다.")
+
+    st.subheader("오늘의 핵심 행동")
+    funnel = [
+        {"지표": "체크인 시작", "값": metrics.get("checkin_started_users", 0)},
+        {"지표": "체크인 완료", "값": metrics.get("checkin_completed_users", 0)},
+        {"지표": "추천 수락", "값": metrics.get("recommendations_accepted", 0)},
+        {"지표": "추천 수정", "값": metrics.get("recommendations_modified", 0)},
+        {"지표": "습관 완료", "값": metrics.get("habits_completed", 0)},
+        {"지표": "알림 노출", "값": metrics.get("reminders_shown", 0)},
+        {"지표": "알림 확인", "값": metrics.get("reminders_acknowledged", 0)},
+    ]
+    st.dataframe(funnel, hide_index=True, use_container_width=True)
+
+    daily = metrics.get("daily", [])
+    if daily:
+        st.subheader("최근 14일 활성·체크인 사용자")
+        st.bar_chart(daily, x="day", y=["active_users", "checked_in_users"])
+    else:
+        st.info("아직 표시할 일별 이벤트가 없습니다.")
+
+
 def security_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -1348,5 +1439,7 @@ elif st.session_state.page == "reminders":
     reminders_page()
 elif st.session_state.page == "data":
     data_page()
+elif st.session_state.page == "admin":
+    admin_page()
 else:
     today_page()

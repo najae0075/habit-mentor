@@ -129,11 +129,18 @@ def auth_screen(backend: SupabaseBackend) -> None:
                 st.warning("올바른 이메일과 8자 이상의 비밀번호를 입력해주세요.")
                 return
             try:
-                result = (
-                    backend.sign_in(email, password)
-                    if mode == "로그인"
-                    else backend.sign_up(email, password, redirect_to=PUBLIC_APP_URL)
-                )
+                if mode == "로그인":
+                    result = backend.sign_in(email, password)
+                else:
+                    try:
+                        result = backend.sign_up(email, password, redirect_to=PUBLIC_APP_URL)
+                    except TypeError as error:
+                        # Streamlit can briefly retain the previous imported module
+                        # while applying a rolling deployment. The configured
+                        # Supabase Site URL remains the safe fallback redirect.
+                        if "redirect_to" not in str(error):
+                            raise
+                        result = backend.sign_up(email, password)
             except SupabaseError as error:
                 st.error(str(error))
                 return

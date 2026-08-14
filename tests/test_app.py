@@ -75,6 +75,16 @@ class DailyPaceTest(unittest.TestCase):
         self.assertIn(selected_habit, app.session_state["completion_history"][today_key])
         self.assertTrue(any(button.label == "완료 취소" for button in app.button))
 
+        difficulty = next(radio for radio in app.radio if radio.label == "오늘 목표 난이도")
+        difficulty.set_value("적당했어요")
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(
+            app.session_state["feedback_history"][today_key][selected_habit],
+            "적당했어요",
+        )
+
     def test_recommendation_rule(self):
         app = AppTest.from_file(str(APP)).run(timeout=15)
         app.session_state["page"] = "recommendation"

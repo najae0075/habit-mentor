@@ -46,6 +46,17 @@ class DailyPaceTest(unittest.TestCase):
         self.assertEqual(len(app.metric), 3)
         self.assertEqual(app.metric[0].label, "주간 성공률")
 
+    def test_character_page_shows_growth(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "character"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.metric), 2)
+        self.assertEqual(app.metric[0].label, "모리의 단계")
+        self.assertEqual(app.metric[0].value, "Lv.1")
+        self.assertEqual(app.metric[1].label, "성장 포인트")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from hashlib import pbkdf2_hmac
 from hmac import compare_digest
 from html import escape
@@ -89,6 +89,14 @@ def initialize_state() -> None:
         "active_date": date.today().isoformat(),
         "adjustment_history": {},
         "rest_history": {},
+        "reminder_settings": {
+            "enabled": False,
+            "moment": "아침",
+            "morning_time": "08:00",
+            "departure_time": "18:00",
+            "habit_time": "20:00",
+        },
+        "reminder_history": {},
         "app_lock": None,
         "app_unlocked": False,
         "accepted": {},
@@ -129,6 +137,8 @@ def serializable_state() -> dict[str, object]:
         "active_date": st.session_state.active_date,
         "adjustment_history": st.session_state.adjustment_history,
         "rest_history": st.session_state.rest_history,
+        "reminder_settings": st.session_state.reminder_settings,
+        "reminder_history": st.session_state.reminder_history,
         "app_lock": st.session_state.app_lock,
         "accepted": st.session_state.accepted,
         "custom_habits": st.session_state.custom_habits,
@@ -158,7 +168,7 @@ def load_remote() -> None:
         st.error(f"저장된 기록을 불러오지 못했습니다: {error}")
         return
     if saved:
-        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "app_lock"):
+        for key in ("condition", "overtime", "available_minutes", "motivation", "sleep", "note", "tone", "nickname", "accepted", "custom_habits", "focus_habits", "completion_history", "focus_history", "checkin_dates", "active_date", "adjustment_history", "rest_history", "reminder_settings", "reminder_history", "app_lock"):
             if key in saved:
                 st.session_state[key] = saved[key]
         st.session_state.completed = set(saved.get("completed", []))
@@ -251,6 +261,65 @@ def display_name() -> str:
     auth = st.session_state.auth or {}
     email = auth.get("user", {}).get("email", "")
     return email.split("@", 1)[0] if email else "나"
+
+
+def now_kst() -> datetime:
+    return datetime.now(timezone(timedelta(hours=9)))
+
+
+def reminder_due_at(now: datetime) -> datetime:
+    settings = st.session_state.reminder_settings
+    moment = settings.get("moment", "아침")
+    field = {"아침": "morning_time", "퇴근 전": "departure_time", "습관 시작 전": "habit_time"}[moment]
+    hour, minute = (int(part) for part in settings.get(field, "08:00").split(":"))
+    due = datetime.combine(now.date(), time(hour, minute), tzinfo=now.tzinfo)
+    if moment == "퇴근 전":
+        due -= timedelta(minutes=30)
+    elif moment == "습관 시작 전":
+        due -= timedelta(minutes=10)
+    return due
+
+
+def render_due_reminder() -> None:
+    settings = st.session_state.reminder_settings
+    if not settings.get("enabled"):
+        return
+    now = now_kst()
+    today_key = now.date().isoformat()
+    if today_key in st.session_state.checkin_dates:
+        return
+    history = st.session_state.reminder_history
+    state = history.get(today_key)
+    phase = None
+    if state is None and now >= reminder_due_at(now):
+        phase = "first"
+        history[today_key] = {"phase": phase, "shown_at": now.isoformat(), "resolved": False}
+        save_remote()
+    elif state and not state.get("resolved") and state.get("phase") == "first":
+        retry_at = datetime.fromisoformat(state["shown_at"]) + timedelta(minutes=30)
+        if now >= retry_at:
+            phase = "retry"
+            state["phase"] = phase
+            state["shown_at"] = now.isoformat()
+            save_remote()
+    if phase is None:
+        return
+
+    label = "부드러운 재알림" if phase == "retry" else "오늘의 체크인"
+    st.info(f"♡ {label} · 지금 컨디션을 알려주면 오늘에 맞는 목표를 제안할게요.")
+    check_col, later_col, dismiss_col = st.columns(3)
+    if check_col.button("지금 체크인", type="primary", key=f"reminder-check-{phase}", use_container_width=True):
+        history[today_key]["resolved"] = True
+        save_remote()
+        go("checkin")
+    if phase == "first" and later_col.button("30분 뒤 다시", key="reminder-later", use_container_width=True):
+        history[today_key]["shown_at"] = now.isoformat()
+        save_remote()
+        st.rerun()
+    if dismiss_col.button("오늘은 괜찮아요", key=f"reminder-dismiss-{phase}", use_container_width=True):
+        history[today_key]["resolved"] = True
+        save_remote()
+        st.rerun()
 
 
 def auth_screen(backend: SupabaseBackend) -> None:
@@ -427,6 +496,8 @@ def sidebar() -> None:
             go("security")
         if st.button("⚙  프로필 설정", use_container_width=True):
             go("profile")
+        if st.button("◷  알림 설정", use_container_width=True):
+            go("reminders")
         st.divider()
         st.caption(f"멘토 말투 · {st.session_state.tone}")
         st.markdown(f'<div class="profile"><strong>{escape(display_name())}</strong>나의 속도로, 꾸준히</div>', unsafe_allow_html=True)
@@ -713,6 +784,43 @@ def profile_page() -> None:
         st.caption(f"로그인 계정 · {email}")
 
 
+def reminders_page() -> None:
+    if st.button("← 오늘로 돌아가기"):
+        go("today")
+    st.markdown('<div class="center-heading"><div class="eyebrow">CHECK-IN REMINDER</div><h1>재촉하지 않고<br><span class="accent">한 번만 다정하게.</span></h1><p>원하는 시점에 체크인을 안내하고, 놓치면 30분 뒤 한 번만 다시 알려드려요.</p></div>', unsafe_allow_html=True)
+    settings = st.session_state.reminder_settings
+    with st.form("reminder-settings"):
+        enabled = st.toggle("체크인 알림 사용", value=settings.get("enabled", False))
+        moment = st.segmented_control(
+            "알림 시점",
+            ["아침", "퇴근 전", "습관 시작 전"],
+            default=settings.get("moment", "아침"),
+        )
+        morning = st.time_input("아침 시간", value=time.fromisoformat(settings.get("morning_time", "08:00")))
+        departure = st.time_input("예상 퇴근 시간", value=time.fromisoformat(settings.get("departure_time", "18:00")))
+        habit_start = st.time_input("습관 시작 시간", value=time.fromisoformat(settings.get("habit_time", "20:00")))
+        submitted = st.form_submit_button("알림 설정 저장", type="primary", use_container_width=True)
+    if submitted:
+        st.session_state.reminder_settings = {
+            "enabled": enabled,
+            "moment": moment,
+            "morning_time": morning.strftime("%H:%M"),
+            "departure_time": departure.strftime("%H:%M"),
+            "habit_time": habit_start.strftime("%H:%M"),
+        }
+        save_remote()
+        st.success("알림 설정을 저장했어요.")
+        st.rerun()
+
+    selected_time = {
+        "아침": settings.get("morning_time", "08:00"),
+        "퇴근 전": f"{settings.get('departure_time', '18:00')} 30분 전",
+        "습관 시작 전": f"{settings.get('habit_time', '20:00')} 10분 전",
+    }[settings.get("moment", "아침")]
+    st.info(f"현재 설정 · {settings.get('moment', '아침')} {selected_time} · 재알림 30분 뒤 1회")
+    st.caption("현재 버전은 앱을 열어두거나 다시 방문했을 때 표시되는 앱 내부 알림입니다. 브라우저 푸시 알림은 다음 단계에서 연결할 수 있어요.")
+
+
 def security_page() -> None:
     if st.button("← 오늘로 돌아가기"):
         go("today")
@@ -833,6 +941,7 @@ if st.session_state.app_lock and not st.session_state.app_unlocked:
     lock_screen()
     st.stop()
 sidebar()
+render_due_reminder()
 if st.session_state.flash:
     st.toast(st.session_state.flash, icon="🌿")
     st.session_state.flash = ""
@@ -853,5 +962,7 @@ elif st.session_state.page == "security":
     security_page()
 elif st.session_state.page == "profile":
     profile_page()
+elif st.session_state.page == "reminders":
+    reminders_page()
 else:
     today_page()

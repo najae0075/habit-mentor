@@ -105,6 +105,16 @@ class DailyPaceTest(unittest.TestCase):
         self.assertTrue(any(field.label == "코칭 말투" for field in app.selectbox))
         self.assertTrue(any("프로필 저장" in button.label for button in app.button))
 
+    def test_reminder_settings_include_single_retry_policy(self):
+        app = AppTest.from_file(str(APP)).run(timeout=15)
+        app.session_state["page"] = "reminders"
+        app.run(timeout=15)
+
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.time_input), 3)
+        self.assertTrue(any("알림 설정 저장" in button.label for button in app.button))
+        self.assertTrue(any("재알림 30분 뒤 1회" in message.value for message in app.info))
+
 
 if __name__ == "__main__":
     unittest.main()
